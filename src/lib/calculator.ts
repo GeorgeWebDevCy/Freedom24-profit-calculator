@@ -6,55 +6,128 @@ export class ProfitCalculator {
     trades: Trade[] = [];
     fees: FeeRecord[] = [];
 
-    // Helper to parse dates like "DD.MM.YYYY" or standard JS dates
-    private parseDate(dateVal: any): Date {
-        if (dateVal instanceof Date) return dateVal;
-        if (typeof dateVal === 'string') {
-            // Assume DD.MM.YYYY which is common in Freedom24
-            const parts = dateVal.split('.');
-            if (parts.length === 3) {
-                return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-            }
-            return new Date(dateVal);
+    private parseNumber(value: unknown): number {
+        if (value === null || value === undefined) return 0;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+        const raw = String(value).trim();
+        if (!raw) return 0;
+
+        let normalized = raw.replace(/\s+/g, '');
+        const hasComma = normalized.includes(',');
+        const hasDot = normalized.includes('.');
+        if (hasComma && hasDot) {
+            normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else if (hasComma) {
+            normalized = normalized.replace(',', '.');
         }
-        // Excel serial date?
-        if (typeof dateVal === 'number') {
-            return new Date((dateVal - (25567 + 2)) * 86400 * 1000);
+        normalized = normalized.replace(/[^0-9.-]/g, '');
+        const num = Number(normalized);
+        return Number.isFinite(num) ? num : 0;
+    }
+
+    private parseDate(dateVal: unknown): Date {
+        if (dateVal instanceof Date && !Number.isNaN(dateVal.getTime())) return dateVal;
+        if (typeof dateVal === 'number' && Number.isFinite(dateVal)) {
+            return new Date((dateVal - 25569) * 86400 * 1000);
+        }
+        if (typeof dateVal === 'string') {
+            const trimmed = dateVal.trim();
+            if (!trimmed) return new Date();
+            const [datePart, timePart] = trimmed.split(' ');
+            const dot = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+            const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+            const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+            let day: number | null = null;
+            let month: number | null = null;
+            let year: number | null = null;
+            if (dot.test(datePart)) {
+                const [, d, m, y] = datePart.match(dot) as RegExpMatchArray;
+                day = parseInt(d, 10);
+                month = parseInt(m, 10) - 1;
+                year = parseInt(y, 10);
+            } else if (slash.test(datePart)) {
+                const [, d, m, y] = datePart.match(slash) as RegExpMatchArray;
+                day = parseInt(d, 10);
+                month = parseInt(m, 10) - 1;
+                year = parseInt(y, 10);
+            } else if (iso.test(datePart)) {
+                const [, y, m, d] = datePart.match(iso) as RegExpMatchArray;
+                day = parseInt(d, 10);
+                month = parseInt(m, 10) - 1;
+                year = parseInt(y, 10);
+            }
+
+            if (day !== null && month !== null && year !== null) {
+                if (timePart) {
+                    const [hh, mm] = timePart.split(':').map((v) => parseInt(v, 10));
+                    return new Date(year, month, day, hh || 0, mm || 0);
+                }
+                return new Date(year, month, day);
+            }
+
+            const fallback = new Date(trimmed);
+            if (!Number.isNaN(fallback.getTime())) return fallback;
         }
         return new Date();
     }
 
+    private getValue(row: Record<string, any>, keys: string[]) {
+        for (const key of keys) {
+            const value = row[key];
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private normalizeDirection(value: unknown): TradeDirection | null {
+        const dir = String(value ?? '').trim().toLowerCase();
+        if (!dir) return null;
+        if (dir.startsWith('b') || dir.includes('buy')) return TradeDirection.BUY;
+        if (dir.startsWith('s') || dir.includes('sell')) return TradeDirection.SELL;
+        return null;
+    }
+
     async loadTrades(fileBuffer: ArrayBuffer) {
-        const wb = read(fileBuffer, { type: 'array' });
+        const wb = read(fileBuffer, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]]; // Assume first sheet
-        const data: any[] = utils.sheet_to_json(ws);
+        const data: any[] = utils.sheet_to_json(ws, { defval: null });
 
         this.trades = [];
 
         for (const row of data) {
-            // Basic validation
-            if (!row['Ticker'] && !row['Symbol']) continue;
+            const ticker = this.getValue(row, ['Ticker', 'Symbol', 'Instrument', 'Security', 'ISIN']);
+            if (!ticker) continue;
 
-            const ticker = row['Ticker'] || row['Symbol'];
-            const dateVal = row['Date'];
-            const qty = Math.abs(parseFloat(row['Quantity'] || row['Qty'] || '0'));
-            const price = parseFloat(row['Price'] || '0');
-            const fee = Math.abs(parseFloat(row['Fee'] || row['Commission'] || '0'));
-            const amount = Math.abs(parseFloat(row['Amount'] || '0'));
+            const dateVal = this.getValue(row, ['Date', 'Trade Date', 'Execution Date']);
+            const rawQty = this.parseNumber(this.getValue(row, ['Quantity', 'Qty', 'Volume', 'Amount (shares)']));
+            const rawAmount = this.parseNumber(this.getValue(row, ['Amount', 'Value', 'Total', 'Sum']));
+            const rawPrice = this.parseNumber(this.getValue(row, ['Price', 'Price per share', 'Rate']));
+            const rawFee = this.parseNumber(this.getValue(row, ['Fee', 'Commission', 'Commissions', 'Trading fee', 'Fee amount']));
+            const directionValue = this.getValue(row, ['Direction', 'Type', 'Side', 'Action', 'Operation']);
+            const direction = this.normalizeDirection(directionValue)
+                ?? ((rawQty < 0 || rawAmount < 0) ? TradeDirection.SELL : TradeDirection.BUY);
 
-            let direction = TradeDirection.BUY;
-            const dirStr = String(row['Direction'] || '').toLowerCase();
-            if (dirStr.includes('sell')) direction = TradeDirection.SELL;
+            const quantity = Math.abs(rawQty);
+            const amount = Math.abs(rawAmount);
+            let price = rawPrice;
+            if (!price && quantity > 0 && amount > 0) {
+                price = amount / quantity;
+            }
+            const fee = Math.abs(rawFee);
+
+            if (!quantity || !price) continue;
 
             this.trades.push({
                 date: this.parseDate(dateVal),
-                ticker: String(ticker),
+                ticker: String(ticker).trim(),
                 direction,
-                quantity: qty,
-                price: price,
-                fee: fee,
-                amount: amount,
-                datetime_str: String(dateVal)
+                quantity,
+                price,
+                fee,
+                amount: amount || price * quantity,
+                datetime_str: dateVal ? String(dateVal) : undefined,
             });
         }
 
@@ -63,26 +136,33 @@ export class ProfitCalculator {
     }
 
     async loadFees(fileBuffer: ArrayBuffer) {
-        const wb = read(fileBuffer, { type: 'array' });
+        const wb = read(fileBuffer, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const data: any[] = utils.sheet_to_json(ws);
+        const data: any[] = utils.sheet_to_json(ws, { defval: null });
 
         this.fees = [];
 
         for (const row of data) {
-            const amount = parseFloat(row['Amount'] || '0');
-            const dirStr = String(row['Direction'] || '').toLowerCase();
+            const amountRaw = this.parseNumber(this.getValue(row, ['Amount', 'Value', 'Total', 'Sum']));
+            const direction = String(this.getValue(row, ['Direction', 'Type', 'Operation', 'Action']) ?? '').toLowerCase();
+            const comment = String(this.getValue(row, ['Comment', 'Description', 'Details']) ?? '');
+            const currency = String(this.getValue(row, ['Currency']) ?? '');
+            const looksLikeFee = direction.includes('fee')
+                || direction.includes('commission')
+                || comment.toLowerCase().includes('fee')
+                || comment.toLowerCase().includes('commission');
 
-            // In Freedom24, "Trading fee" with a negative amount is a cost.
-            // We only care about costs for now
-            if (dirStr.includes('trading fee') || dirStr.includes('commission')) {
-                this.fees.push({
-                    date: this.parseDate(row['Date']),
-                    description: row['Comment'] || row['Direction'],
-                    amount: amount,
-                    currency: row['Currency']
-                });
-            }
+            if (!looksLikeFee) continue;
+
+            const normalizedAmount = amountRaw > 0 ? -amountRaw : amountRaw;
+            if (!normalizedAmount) continue;
+
+            this.fees.push({
+                date: this.parseDate(this.getValue(row, ['Date'])),
+                description: comment || direction,
+                amount: normalizedAmount,
+                currency,
+            });
         }
     }
 
@@ -175,17 +255,14 @@ export class ProfitCalculator {
         }
 
         const totalRealized = closedTrades.reduce((sum, t) => sum + t.realized_profit, 0);
-        // Fees are negative amounts in the file, so we sum them (resulting in negative total)
-        // If we want "Total Fees Paid", we take absolute.
-        // Net Profit = Realized + (Sum of Negative Fees)
-        const standaloneFees = this.fees.reduce((sum, f) => sum + f.amount, 0);
+        const standaloneFees = this.fees.reduce((sum, f) => sum + Math.abs(f.amount), 0);
 
         return {
             closed_trades: closedTrades,
             open_positions: openPositions,
             total_realized_profit: totalRealized,
-            total_fees_paid: standaloneFees, // This is a negative number usually
-            net_profit: totalRealized + standaloneFees
+            total_fees_paid: standaloneFees,
+            net_profit: totalRealized - standaloneFees
         };
     }
 }

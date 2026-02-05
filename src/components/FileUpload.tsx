@@ -1,10 +1,11 @@
 
-import React, { useCallback, useState } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { ProfitCalculator } from '../lib/calculator';
+import type { CalculationResult } from '../lib/types';
 
 interface FileUploadProps {
-    onCalculationComplete: (result: any) => void;
+    onCalculationComplete: (result: CalculationResult) => void;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete }) => {
@@ -128,7 +129,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                 disabled={isCalculating || !tradesFile}
                 className="w-full max-w-sm btn-primary py-4 text-lg shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {isCalculating ? "Processing..." : "Calculate Profits 🚀"}
+                {isCalculating ? "Processing..." : "Calculate Profits"}
             </button>
         </div>
     );

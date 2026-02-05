@@ -5,22 +5,22 @@ Implement the core logic for calculating realized profits, cost basis (FIFO/Avg)
 
 ## User Review Required
 > [!IMPORTANT]
-> **Tech Stack Selection**: I am proposing **Python** with **Pandas** for the data processing engine. It is robust, easy to test, and handles Excel files natively.
-> For the User Interface, I propose starting with a **Command Line Interface (CLI)** to verify the math is 100% correct. Later, we can wrap this in a **Flet** (Flutter for Python) or **Streamlit** app for a nice GUI.
+> **Tech Stack Selection**: I am proposing **TypeScript** for the data processing engine inside the existing Electron + Vite + React app. This keeps all logic in one codebase and avoids a separate Python prototype.
+> For verification, we can add unit tests with **Vitest** and use small fixture datasets in `data/`.
 > **Does this sound good?**
 
 ## Proposed Changes
 
 ### Core Logic (`src/`)
-#### [NEW] `src/calculator.py`
+#### [NEW] `src/lib/calculator.ts`
 - Implements `ProfitCalculator` class.
 - Methods: `load_data()`, `calculate_FIFO()`, `calculate_AvgCost()`.
 
-#### [NEW] `src/models.py`
-- Data classes for `Trade`, `Position`, `Report`.
+#### [NEW] `src/lib/models.ts`
+- TypeScript types for `Trade`, `Position`, `Report`.
 
 ### Testing (`tests/`)
-#### [NEW] `tests/test_calculator.py`
+#### [NEW] `test/calculator.test.ts`
 - Unit tests for FIFO logic (buy, buy, sell partial, sell remainder).
 - Unit tests for Avg Cost logic.
 - Integration tests with dummy Excel files.
@@ -32,8 +32,7 @@ Implement the core logic for calculating realized profits, cost basis (FIFO/Avg)
 ## Verification Plan
 
 ### Automated Tests
-- Run `pytest` to execute all unit tests.
-- Example command: `pytest -v`
+- Run `npm test` to execute all unit tests.
 
 ### Manual Verification
 1.  Run the script against the dummy data.

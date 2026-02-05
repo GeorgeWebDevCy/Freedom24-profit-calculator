@@ -50,6 +50,6 @@ export interface CalculationResult {
     closed_trades: ClosedTrade[];
     open_positions: Record<string, Lot[]>;
     total_realized_profit: number;
-    total_fees_paid: number; // Aggregated standalone fees
+    total_fees_paid: number; // Aggregated standalone fees (positive)
     net_profit: number; // Realized - Fees
 }
