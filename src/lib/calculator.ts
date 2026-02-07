@@ -1,10 +1,11 @@
 
 import { read, utils } from 'xlsx';
-import { Trade, TradeDirection, Lot, ClosedTrade, CalculationResult, FeeRecord } from './types';
+import { Trade, TradeDirection, Lot, ClosedTrade, CalculationResult, FeeRecord, Dividend } from './types';
 
 export class ProfitCalculator {
     trades: Trade[] = [];
     fees: FeeRecord[] = [];
+    dividends: Dividend[] = [];
 
     private parseNumber(value: unknown): number {
         if (value === null || value === undefined) return 0;
@@ -108,6 +109,7 @@ export class ProfitCalculator {
             const directionValue = this.getValue(row, ['Direction', 'Type', 'Side', 'Action', 'Operation']);
             const direction = this.normalizeDirection(directionValue)
                 ?? ((rawQty < 0 || rawAmount < 0) ? TradeDirection.SELL : TradeDirection.BUY);
+            const currency = String(this.getValue(row, ['Currency', 'Curr']) ?? 'USD');
 
             const quantity = Math.abs(rawQty);
             const amount = Math.abs(rawAmount);
@@ -127,6 +129,7 @@ export class ProfitCalculator {
                 price,
                 fee,
                 amount: amount || price * quantity,
+                currency,
                 datetime_str: dateVal ? String(dateVal) : undefined,
             });
         }
@@ -141,34 +144,66 @@ export class ProfitCalculator {
         const data: any[] = utils.sheet_to_json(ws, { defval: null });
 
         this.fees = [];
+        this.dividends = [];
 
         for (const row of data) {
             const amountRaw = this.parseNumber(this.getValue(row, ['Amount', 'Value', 'Total', 'Sum']));
             const direction = String(this.getValue(row, ['Direction', 'Type', 'Operation', 'Action']) ?? '').toLowerCase();
             const comment = String(this.getValue(row, ['Comment', 'Description', 'Details']) ?? '');
-            const currency = String(this.getValue(row, ['Currency']) ?? '');
-            const looksLikeFee = direction.includes('fee')
+            const currency = String(this.getValue(row, ['Currency']) ?? 'USD');
+
+            // Check for Tax/Fee
+            const isTax = direction.toLowerCase().includes('tax')
+                || comment.toLowerCase().includes('tax')
+                || direction.includes('fee')
                 || direction.includes('commission')
                 || comment.toLowerCase().includes('fee')
                 || comment.toLowerCase().includes('commission');
 
-            if (!looksLikeFee) continue;
+            // Check for Dividend
+            const isDividend = (direction.includes('dividend')
+                || comment.toLowerCase().includes('dividend')
+                || direction.includes('div')
+                || comment.toLowerCase().includes('div payment'))
+                && !isTax; // Exclude taxes from dividends
 
-            const normalizedAmount = amountRaw > 0 ? -amountRaw : amountRaw;
-            if (!normalizedAmount) continue;
+            if (isDividend) {
+                const amount = Math.abs(amountRaw); // Dividends are income
+                if (!amount) continue;
 
-            this.fees.push({
-                date: this.parseDate(this.getValue(row, ['Date'])),
-                description: comment || direction,
-                amount: normalizedAmount,
-                currency,
-            });
+                this.dividends.push({
+                    date: this.parseDate(this.getValue(row, ['Date'])),
+                    description: comment || direction,
+                    amount,
+                    currency
+                });
+                continue; // Skip fee processing if it's a dividend
+            }
+
+            if (isTax) {
+                const amount = Math.abs(amountRaw); // Fees are expenses
+                if (!amount) continue;
+
+                this.fees.push({
+                    date: this.parseDate(this.getValue(row, ['Date'])),
+                    description: comment || direction,
+                    amount: amount, // Fees are stored as positive values, their impact is negative in net_profit
+                    currency,
+                });
+            }
         }
     }
 
     calculate(method: 'FIFO' | 'AVG' = 'FIFO'): CalculationResult {
         const closedTrades: ClosedTrade[] = [];
         const openPositions: Record<string, Lot[]> = {};
+        const totalsByCurrency: Record<string, { realized_profit: number, fees_paid: number, dividends: number, net_profit: number }> = {};
+
+        const initCurrency = (ccy: string) => {
+            if (!totalsByCurrency[ccy]) {
+                totalsByCurrency[ccy] = { realized_profit: 0, fees_paid: 0, dividends: 0, net_profit: 0 };
+            }
+        };
 
         // Group by ticker
         const tradesByTicker: Record<string, Trade[]> = {};
@@ -182,6 +217,8 @@ export class ProfitCalculator {
             const ledger: Lot[] = [];
 
             for (const trade of tickerTrades) {
+                initCurrency(trade.currency);
+
                 if (trade.direction === TradeDirection.BUY) {
                     // Avg cost per share for this lot
                     const unitCost = (trade.price * trade.quantity + trade.fee) / trade.quantity;
@@ -190,7 +227,8 @@ export class ProfitCalculator {
                         quantity: trade.quantity,
                         unit_cost: unitCost,
                         price_paid: trade.price * trade.quantity,
-                        fees_paid: trade.fee
+                        fees_paid: trade.fee,
+                        currency: trade.currency
                     });
                 } else if (trade.direction === TradeDirection.SELL) {
                     let qtyToSell = trade.quantity;
@@ -245,8 +283,11 @@ export class ProfitCalculator {
                         cost_basis: costBasis,
                         realized_profit: realizedProfit,
                         sale_proceeds: saleProceeds,
+                        currency: trade.currency,
                         method
                     });
+
+                    totalsByCurrency[trade.currency].realized_profit += realizedProfit;
                 }
             }
             if (ledger.length > 0) {
@@ -256,13 +297,35 @@ export class ProfitCalculator {
 
         const totalRealized = closedTrades.reduce((sum, t) => sum + t.realized_profit, 0);
         const standaloneFees = this.fees.reduce((sum, f) => sum + Math.abs(f.amount), 0);
+        const totalDividends = this.dividends.reduce((sum, d) => sum + d.amount, 0);
+
+        // Aggregate fees and dividends by currency
+        for (const fee of this.fees) {
+            initCurrency(fee.currency);
+            totalsByCurrency[fee.currency].fees_paid += Math.abs(fee.amount);
+        }
+
+        for (const div of this.dividends) {
+            initCurrency(div.currency);
+            totalsByCurrency[div.currency].dividends += div.amount;
+        }
+
+        // Calculate net profit per currency
+        for (const ccy in totalsByCurrency) {
+            const t = totalsByCurrency[ccy];
+            t.net_profit = t.realized_profit - t.fees_paid + t.dividends;
+        }
 
         return {
             closed_trades: closedTrades,
             open_positions: openPositions,
             total_realized_profit: totalRealized,
             total_fees_paid: standaloneFees,
-            net_profit: totalRealized - standaloneFees
+            total_dividends: totalDividends,
+            net_profit: totalRealized - standaloneFees + totalDividends,
+            dividends: this.dividends,
+            fees: this.fees,
+            totals_by_currency: totalsByCurrency
         };
     }
 }

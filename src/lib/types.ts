@@ -16,6 +16,7 @@ export interface Trade {
     price: number;
     fee: number;
     amount: number;
+    currency: string;
     datetime_str?: string;
 }
 
@@ -25,6 +26,7 @@ export interface Lot {
     unit_cost: number;
     price_paid: number;
     fees_paid: number;
+    currency: string;
 }
 
 export interface ClosedTrade {
@@ -36,6 +38,7 @@ export interface ClosedTrade {
     cost_basis: number;
     realized_profit: number;
     sale_proceeds: number;
+    currency: string;
     method: 'FIFO' | 'AVG';
 }
 
@@ -46,10 +49,28 @@ export interface FeeRecord {
     currency: string;
 }
 
+export interface Dividend {
+    date: Date;
+    description: string;
+    amount: number; // Positive for income
+    currency: string;
+}
+
+export interface CurrencyTotals {
+    realized_profit: number;
+    fees_paid: number;
+    dividends: number;
+    net_profit: number;
+}
+
 export interface CalculationResult {
     closed_trades: ClosedTrade[];
     open_positions: Record<string, Lot[]>;
     total_realized_profit: number;
     total_fees_paid: number; // Aggregated standalone fees (positive)
-    net_profit: number; // Realized - Fees
+    total_dividends: number; // Aggregated dividends (positive)
+    net_profit: number; // Realized - Fees + Dividends
+    dividends: Dividend[];
+    fees: FeeRecord[]; // Array to hold fee records for filtering
+    totals_by_currency: Record<string, CurrencyTotals>;
 }
