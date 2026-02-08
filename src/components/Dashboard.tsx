@@ -131,6 +131,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
         }
     };
 
+    // Initialize alerts service
+    useEffect(() => {
+        const settings = AlertsService.getDefaultSettings();
+        const service = new AlertsService(settings);
+        setAlertService(service);
+
+        // Get symbols from data for monitoring
+        const symbols = new Set<string>();
+        data.closed_trades.forEach(trade => symbols.add(trade.ticker));
+        Object.keys(data.open_positions).forEach(ticker => symbols.add(ticker));
+
+        if (symbols.size > 0) {
+            service.startMonitoring(Array.from(symbols));
+        }
+
+        return () => {
+            service.stopMonitoring();
+        };
+    }, [data]);
+
     // Handler to fetch stock prices for open positions
     const handleFetchPrices = async () => {
         const tickers = Object.keys(data.open_positions);
@@ -663,133 +683,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                              onClick={() => setActiveTab('tax')}
                              label={`Tax (${data.taxCalculations ? Object.keys(data.taxCalculations).length : 0})`}
                          />
-                    </div>
+                         <TabButton
+                              active={activeTab === 'alerts'}
+                              onClick={() => setActiveTab('alerts')}
+                              label="Alerts"
+                         />
 
-                    <div className="flex-1 overflow-auto p-0">
-                        {activeTab === 'trades' && (
-                            <TableContainer>
-                                <TableHeader>
-                                    <Th>Date</Th>
-                                    <Th>Ticker</Th>
-                                    <Th>Qty</Th>
-                                    <Th>Sell Price</Th>
-                                    <Th>Cost Basis</Th>
-                                    <Th align="right">Profit ({selectedCurrency})</Th>
-                                </TableHeader>
-                                <tbody>
-                                    {sortedTrades.map((t, i) => (
-                                        <tr key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                            <Td>{t.date.toLocaleDateString()}</Td>
-                                            <Td className="font-semibold text-blue-400">{t.ticker}</Td>
-                                            <Td>{t.quantity}</Td>
-                                            <Td>{formatCurrency(t.sell_price)}</Td>
-                                            <Td>{formatCurrency(t.cost_basis)}</Td>
-                                            <Td align="right" className={t.realized_profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                                {formatCurrency(t.realized_profit)}
-                                            </Td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </TableContainer>
-                        )}
-
-                        {activeTab === 'positions' && (
-                            <>
-                                {data.openPositionsSource === 'CALCULATED' && (
-                                    <div className="bg-amber-500/10 border-l-4 border-amber-500 p-3 mx-4 mb-4 rounded-r flex items-start gap-3">
-                                        <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={18} />
-                                        <div className="text-sm text-amber-200">
-                                            <span className="font-bold block mb-1">Estimated Positions</span>
-                                            These positions are calculated from your trade history (`Trades.xlsx`) and may be inaccurate if the history is incomplete.
-                                            <br />
-                                            For 100% accuracy, please upload your <strong>Open Positions</strong> Excel file.
-                                        </div>
-                                    </div>
-                                )}
-                                <TableContainer>
-                                    <TableHeader>
-                                        <Th>Ticker</Th>
-                                        <Th>Qty</Th>
-                                        <Th>Avg Cost</Th>
-                                        <Th>Current Price</Th>
-                                        <Th>Market Value ({selectedCurrency})</Th>
-                                        <Th align="right">Unrealized P/L</Th>
-                                    </TableHeader>
-                                    <tbody>
-                                        {openPositionsSummary.length === 0 && (
-                                            <tr><Td colSpan={6} className="text-gray-500 italic">No open positions.</Td></tr>
-                                        )}
-                                        {openPositionsSummary.map((pos) => (
-                                            <tr key={pos.ticker} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                                <Td className="font-semibold text-blue-400">
-                                                    {pos.ticker}
-                                                    {pos.has_live_price && (
-                                                        <span className="ml-2 text-xs text-green-400" title="Live price">●</span>
-                                                    )}
-                                                </Td>
-                                                <Td>{pos.quantity}</Td>
-                                                <Td>{formatCurrency(pos.avg_cost)}</Td>
-                                                <Td>{formatCurrency(pos.current_price)}</Td>
-                                                <Td>{formatCurrency(pos.market_value)}</Td>
-                                                <Td align="right" className={pos.unrealized_profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                                    {formatCurrency(pos.unrealized_profit)}
-                                                </Td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </TableContainer>
-                            </>
-                        )}
-
-                        {activeTab === 'dividends' && (
-                            <TableContainer>
-                                <TableHeader>
-                                    <Th>Date</Th>
-                                    <Th>Description</Th>
-                                    <Th align="right">Amount ({selectedCurrency})</Th>
-                                </TableHeader>
-                                <tbody>
-                                    {processedData.dividends.map((d, i) => (
-                                        <tr key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                            <Td>{d.date.toLocaleDateString()}</Td>
-                                            <Td>{d.description}</Td>
-                                            <Td align="right" className="text-green-400">{formatCurrency(d.amount)}</Td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </TableContainer>
-                        )}
-
-                        {activeTab === 'fees' && (
-                            <TableContainer>
-                                <TableHeader>
-                                    <Th>Date</Th>
-                                    <Th>Description</Th>
-                                    <Th align="right">Amount ({selectedCurrency})</Th>
-                                </TableHeader>
-                                <tbody>
-                                    {processedData.fees.map((f, i) => (
-                                        <tr key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                            <Td>{f.date.toLocaleDateString()}</Td>
-                                            <Td>{f.description}</Td>
-                                            <Td align="right" className="text-red-400">{formatCurrency(f.amount)}</Td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </TableContainer>
-                        )}
-
-                        {activeTab === 'tax' && (
-                             <TaxDashboard 
-                                 data={data} 
-                                 onRefresh={() => {
-                                     // Trigger tax recalculation
-                                     console.log('Refreshing tax data...');
-                                 }}
+                         {activeTab === 'alerts' && (
+                             <AlertManager 
+                                 symbols={Array.from(new Set([
+                                     ...data.closed_trades.map(t => t.ticker),
+                                     ...Object.keys(data.open_positions)
+                                 ]))}
                              />
                          )}
 
-                         {activeTab === 'performance' && data.performance_metrics && (
+                          {activeTab === 'performance' && data.performance_metrics && (
                             <div className="p-4 space-y-6">
                                 {/* Summary Stats */}
                                 <div className="grid grid-cols-2 gap-4">

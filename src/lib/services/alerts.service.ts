@@ -130,7 +130,7 @@ export class AlertsService {
             return false;
         }
 
-        const threshold = condition.value;
+        const threshold = (condition as any).value;
         const previousValue = alert.currentValue || alert.threshold;
 
         switch (condition.operator) {
@@ -144,10 +144,10 @@ export class AlertsService {
                 return currentPrice <= threshold;
             case 'percentage':
                 const percentageChange = ((currentPrice - previousValue) / previousValue) * 100;
-                return Math.abs(percentageChange) >= threshold.value;
+                return Math.abs(percentageChange) >= (condition as any).value;
             case 'dollar_change':
                 const dollarChange = Math.abs(currentPrice - previousValue);
-                return dollarChange >= threshold.value;
+                return dollarChange >= (condition as any).value;
             default:
                 return false;
         }
@@ -164,7 +164,7 @@ export class AlertsService {
         alert.notificationSent = false;
 
         // Create notification
-        const change = currentPrice - (alert.currentValue || alert.threshold.value);
+        const change = currentPrice - (alert.currentValue || (alert.threshold as any).value);
         const percentageChange = alert.currentValue ? (change / alert.currentValue) * 100 : 0;
 
         const notification: AlertNotification = {
@@ -199,7 +199,7 @@ export class AlertsService {
             type: alert.type,
             symbol: alert.symbol,
             currentValue: currentPrice,
-            threshold: alert.threshold.value,
+            threshold: (alert.threshold as any).value,
             change,
             triggered: true,
             acknowledged: false
@@ -333,7 +333,7 @@ export class AlertsService {
             return change > 0 ? 'success' : 'warning';
         }
         
-        if (Math.abs(change) / alert.threshold.value > 0.1) {
+        if (Math.abs(change) / (alert.threshold as any).value > 0.1) {
             return 'warning';
         }
         
@@ -372,7 +372,7 @@ export class AlertsService {
         percentageChange: number
     ): string {
         const symbol = alert.symbol;
-        const threshold = alert.threshold.value;
+        const threshold = (alert.threshold as any).value;
         
         switch (alert.type) {
             case 'price_above':
