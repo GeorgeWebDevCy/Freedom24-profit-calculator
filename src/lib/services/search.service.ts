@@ -105,7 +105,7 @@ export class SearchService {
             const result: SearchResult = {
                 id: `trade_${index}`,
                 type: 'trade',
-                title: `${trade.ticker} - ${trade.direction}`,
+                title: `${trade.ticker} - Trade`,
                 description: `${trade.quantity} shares at ${trade.sell_price} on ${trade.date.toLocaleDateString()}`,
                 data: trade,
                 timestamp: trade.date,
