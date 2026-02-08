@@ -5,9 +5,11 @@ import type {
   UpdateDownloadedEvent,
   UpdateInfo,
 } from 'electron-updater'
-import { app, ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
+import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 
 const require = createRequire(import.meta.url)
+const electron = require('electron') as typeof import('electron')
+const { app, ipcMain } = electron
 let cachedAutoUpdater: AppUpdater | null = null
 
 function resolveAutoUpdater(): AppUpdater | null {

@@ -1,11 +1,13 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import { update } from './update'
+import type { BrowserWindow as ElectronBrowserWindow } from 'electron'
 
 const require = createRequire(import.meta.url)
+const electron = require('electron') as typeof import('electron')
+const { app, BrowserWindow, shell, ipcMain } = electron
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // The built directory structure
@@ -39,7 +41,7 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0)
 }
 
-let win: BrowserWindow | null = null
+let win: ElectronBrowserWindow | null = null
 const preload = path.join(__dirname, '../preload/index.mjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
