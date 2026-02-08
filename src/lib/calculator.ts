@@ -1,11 +1,14 @@
 
 import { read, utils } from 'xlsx';
-import { Trade, TradeDirection, Lot, ClosedTrade, CalculationResult, FeeRecord, Dividend } from './types';
+import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Trade, Lot, CashTransaction, TradeDirection } from './types';
+import { calculatePerformanceMetrics } from './performance-calculator';
 
 export class ProfitCalculator {
     trades: Trade[] = [];
+    cashTransactions: CashTransaction[] = [];
     fees: FeeRecord[] = [];
     dividends: Dividend[] = [];
+    importedPositions: Record<string, Lot[]> = {};
 
     private parseNumber(value: unknown): number {
         if (value === null || value === undefined) return 0;
@@ -145,66 +148,158 @@ export class ProfitCalculator {
 
         this.fees = [];
         this.dividends = [];
+        this.cashTransactions = [];
 
         for (const row of data) {
             const amountRaw = this.parseNumber(this.getValue(row, ['Amount', 'Value', 'Total', 'Sum']));
             const direction = String(this.getValue(row, ['Direction', 'Type', 'Operation', 'Action']) ?? '').toLowerCase();
             const comment = String(this.getValue(row, ['Comment', 'Description', 'Details']) ?? '');
             const currency = String(this.getValue(row, ['Currency']) ?? 'USD');
-
-            // Check for Tax/Fee
-            const isTax = direction.toLowerCase().includes('tax')
-                || comment.toLowerCase().includes('tax')
-                || direction.includes('fee')
-                || direction.includes('commission')
-                || comment.toLowerCase().includes('fee')
-                || comment.toLowerCase().includes('commission');
+            const date = this.parseDate(this.getValue(row, ['Date']));
 
             // Check for Dividend
             const isDividend = (direction.includes('dividend')
                 || comment.toLowerCase().includes('dividend')
                 || direction.includes('div')
-                || comment.toLowerCase().includes('div payment'))
-                && !isTax; // Exclude taxes from dividends
+                || comment.toLowerCase().includes('div payment'));
 
             if (isDividend) {
-                const amount = Math.abs(amountRaw); // Dividends are income
+                const amount = Math.abs(amountRaw);
                 if (!amount) continue;
+                this.dividends.push({ date, description: comment || direction, amount, currency });
+                continue;
+            }
 
-                this.dividends.push({
-                    date: this.parseDate(this.getValue(row, ['Date'])),
-                    description: comment || direction,
+            // Check for Cash Transfer (Deposit/Withdrawal)
+            const isDeposit = direction.includes('deposit') || direction.includes('top up') || direction.includes('incoming') || comment.toLowerCase().includes('deposit');
+            const isWithdrawal = direction.includes('withdrawal') || direction.includes('outgoing') || comment.toLowerCase().includes('withdrawal');
+
+            if (isDeposit || isWithdrawal) {
+                const amount = Math.abs(amountRaw);
+                if (!amount) continue;
+                this.cashTransactions.push({
+                    date,
+                    type: isDeposit ? 'DEPOSIT' : 'WITHDRAWAL',
                     amount,
-                    currency
-                });
-                continue; // Skip fee processing if it's a dividend
-            }
-
-            if (isTax) {
-                const amount = Math.abs(amountRaw); // Fees are expenses
-                if (!amount) continue;
-
-                this.fees.push({
-                    date: this.parseDate(this.getValue(row, ['Date'])),
-                    description: comment || direction,
-                    amount: amount, // Fees are stored as positive values, their impact is negative in net_profit
                     currency,
+                    description: comment || direction
                 });
+                continue;
             }
+
+            // Check for Tax/Fee (everything else that is negative)
+            // If it's not a dividend and not a transfer, assume it's a fee if explicitly marked or just negative flow
+            const isTax = direction.includes('tax') || direction.includes('fee') || direction.includes('commission')
+                || comment.toLowerCase().includes('tax') || comment.toLowerCase().includes('fee')
+                || comment.toLowerCase().includes('commission');
+
+            if (isTax || amountRaw < 0) {
+                const amount = Math.abs(amountRaw);
+                if (!amount) continue;
+                this.fees.push({ date, description: comment || direction, amount, currency });
+            }
+        }
+    }
+
+    async loadOpenPositions(fileBuffer: ArrayBuffer) {
+        const wb = read(fileBuffer, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data: any[] = utils.sheet_to_json(ws, { defval: null });
+
+        this.importedPositions = {};
+
+        for (const row of data) {
+            const ticker = String(this.getValue(row, ['Ticker', 'Symbol', 'Instrument', 'ISIN']) ?? '').trim();
+            if (!ticker) continue;
+
+            const quantity = Math.abs(this.parseNumber(this.getValue(row, ['Quantity', 'Qty', 'Volume', 'Amount'])));
+            const avgPrice = this.parseNumber(this.getValue(row, ['Average Price', 'Entry Price', 'Avg Price', 'Open Price']));
+            const marketPrice = this.parseNumber(this.getValue(row, ['Current Price', 'Market Price', 'Last Price', 'Price']));
+            const currency = String(this.getValue(row, ['Currency', 'Curr']) ?? 'USD');
+
+            if (!quantity) continue;
+
+            if (!this.importedPositions[ticker]) {
+                this.importedPositions[ticker] = [];
+            }
+
+            this.importedPositions[ticker].push({
+                date: new Date(), // Default to now
+                quantity,
+                unit_cost: avgPrice,
+                price_paid: quantity * avgPrice,
+                fees_paid: 0,
+                currency,
+                market_price: marketPrice || avgPrice, // Default to avgPrice if no market price found
+            });
         }
     }
 
     calculate(method: 'FIFO' | 'AVG' = 'FIFO'): CalculationResult {
         const closedTrades: ClosedTrade[] = [];
-        const openPositions: Record<string, Lot[]> = {};
+        let openPositions: Record<string, Lot[]> = {};
         const totalsByCurrency: Record<string, { realized_profit: number, fees_paid: number, dividends: number, net_profit: number }> = {};
+        const cashBalances: Record<string, number> = {};
 
         const initCurrency = (ccy: string) => {
             if (!totalsByCurrency[ccy]) {
                 totalsByCurrency[ccy] = { realized_profit: 0, fees_paid: 0, dividends: 0, net_profit: 0 };
             }
+            if (!cashBalances[ccy]) cashBalances[ccy] = 0;
         };
 
+        // 1. Process Cash Transactions
+        for (const trans of this.cashTransactions) {
+            initCurrency(trans.currency);
+            if (trans.type === 'DEPOSIT') {
+                cashBalances[trans.currency] += trans.amount;
+            } else {
+                cashBalances[trans.currency] -= trans.amount;
+            }
+        }
+
+        // 2. Process Trades (Cash flow impact)
+        // Note: We need to iterate ALL trades to get cash flow, not just closed ones.
+        // But the parse logic separates buys/sells.
+        // BUY: Cash - (Price * Qty + Fee)
+        // SELL: Cash + (Price * Qty - Fee)
+        // However, the `Trade` object has `amount` which is (Price*Qty). Fee is separate.
+        // Let's rely on the raw values.
+
+        for (const trade of this.trades) {
+            initCurrency(trade.currency);
+            // 'amount' in Trade is usually Price * Qty (positive).
+            // But verify if the file provided negative for Sells or we normalized it.
+            // normalize: amount = abs(rawAmount).
+
+            // Fee is always parsed as positive expense.
+
+            if (trade.direction === TradeDirection.BUY) {
+                // Cash OUT: Cost of shares + Fee
+                // If the CSV 'Amount' included fee, we might double count if we add fee again.
+                // Standard Freedom24 CSV: Amount = Price * Qty. Fee is separate column.
+                cashBalances[trade.currency] -= (trade.amount + trade.fee);
+            } else if (trade.direction === TradeDirection.SELL) {
+                // Cash IN: Proceeds from sale - Fee
+                cashBalances[trade.currency] += (trade.amount - trade.fee);
+            }
+        }
+
+        // 3. Process Dividends
+        for (const div of this.dividends) {
+            initCurrency(div.currency);
+            cashBalances[div.currency] += div.amount;
+            totalsByCurrency[div.currency].dividends += div.amount;
+        }
+
+        // 4. Process Standalone Fees (from Fees file)
+        for (const fee of this.fees) {
+            initCurrency(fee.currency);
+            cashBalances[fee.currency] -= fee.amount;
+            totalsByCurrency[fee.currency].fees_paid += fee.amount;
+        }
+
+        // ... (existing FIFO/AVG logic for realized profit - Does not affect cash balance directly, only P/L stats)
         // Group by ticker
         const tradesByTicker: Record<string, Trade[]> = {};
         for (const t of this.trades) {
@@ -213,6 +308,7 @@ export class ProfitCalculator {
         }
 
         for (const ticker in tradesByTicker) {
+            // ... (existing logic)
             const tickerTrades = tradesByTicker[ticker];
             const ledger: Lot[] = [];
 
@@ -220,7 +316,6 @@ export class ProfitCalculator {
                 initCurrency(trade.currency);
 
                 if (trade.direction === TradeDirection.BUY) {
-                    // Avg cost per share for this lot
                     const unitCost = (trade.price * trade.quantity + trade.fee) / trade.quantity;
                     ledger.push({
                         date: trade.date,
@@ -235,16 +330,13 @@ export class ProfitCalculator {
                     let costBasis = 0;
 
                     if (method === 'FIFO') {
-                        // Consume lots from the front
                         while (qtyToSell > 0 && ledger.length > 0) {
                             const head = ledger[0];
                             if (head.quantity <= qtyToSell) {
-                                // Full lot consumed
                                 costBasis += head.quantity * head.unit_cost;
                                 qtyToSell -= head.quantity;
-                                ledger.shift(); // Remove head
+                                ledger.shift();
                             } else {
-                                // Partial lot
                                 costBasis += qtyToSell * head.unit_cost;
                                 head.quantity -= qtyToSell;
                                 qtyToSell = 0;
@@ -257,16 +349,12 @@ export class ProfitCalculator {
                         if (totalQty > 0) {
                             const avgCost = totalCost / totalQty;
                             costBasis = qtyToSell * avgCost;
-
-                            // Reduce all lots proportionally
                             const ratio = (totalQty - qtyToSell) / totalQty;
-                            // Filter out tiny dust
                             const newLedger: Lot[] = [];
                             for (const lot of ledger) {
                                 lot.quantity *= ratio;
                                 if (lot.quantity > 1e-9) newLedger.push(lot);
                             }
-                            // replace contents of ledger (casting/reassignment)
                             ledger.splice(0, ledger.length, ...newLedger);
                         }
                     }
@@ -295,20 +383,14 @@ export class ProfitCalculator {
             }
         }
 
+        // Override open positions if imported
+        if (Object.keys(this.importedPositions).length > 0) {
+            openPositions = { ...this.importedPositions };
+        }
+
         const totalRealized = closedTrades.reduce((sum, t) => sum + t.realized_profit, 0);
         const standaloneFees = this.fees.reduce((sum, f) => sum + Math.abs(f.amount), 0);
         const totalDividends = this.dividends.reduce((sum, d) => sum + d.amount, 0);
-
-        // Aggregate fees and dividends by currency
-        for (const fee of this.fees) {
-            initCurrency(fee.currency);
-            totalsByCurrency[fee.currency].fees_paid += Math.abs(fee.amount);
-        }
-
-        for (const div of this.dividends) {
-            initCurrency(div.currency);
-            totalsByCurrency[div.currency].dividends += div.amount;
-        }
 
         // Calculate net profit per currency
         for (const ccy in totalsByCurrency) {
@@ -316,16 +398,46 @@ export class ProfitCalculator {
             t.net_profit = t.realized_profit - t.fees_paid + t.dividends;
         }
 
+        // Calculate total market value of open positions
+        const openPositionsMarketValue = Object.values(openPositions)
+            .flat()
+            .reduce((sum, lot) => sum + (lot.quantity * (lot.market_price ?? lot.unit_cost)), 0);
+
+        // Calculate total cash balance
+        const totalCashBalance = Object.values(cashBalances).reduce((sum, bal) => sum + bal, 0);
+
+        // Calculate performance metrics
+        const allTradesForHolding = this.trades.map(t => ({
+            date: t.date,
+            ticker: t.ticker,
+            direction: t.direction === TradeDirection.BUY ? 'Buy' : 'Sell'
+        }));
+
+        const performanceMetrics = calculatePerformanceMetrics(
+            closedTrades,
+            allTradesForHolding,
+            this.cashTransactions,
+            totalRealized,
+            totalDividends,
+            standaloneFees,
+            openPositionsMarketValue,
+            totalCashBalance
+        );
+
         return {
             closed_trades: closedTrades,
             open_positions: openPositions,
             total_realized_profit: totalRealized,
             total_fees_paid: standaloneFees,
             total_dividends: totalDividends,
-            net_profit: totalRealized - standaloneFees + totalDividends,
+            net_profit: totalRealized - standaloneFees + totalDividends, // Overall net profit
             dividends: this.dividends,
             fees: this.fees,
-            totals_by_currency: totalsByCurrency
+            cash_transactions: this.cashTransactions,
+            calculated_cash_balances: cashBalances,
+            totals_by_currency: totalsByCurrency,
+            openPositionsSource: Object.keys(this.importedPositions).length > 0 ? 'IMPORTED' : 'CALCULATED',
+            performance_metrics: performanceMetrics
         };
     }
 }

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileSpreadsheet, CheckCircle, AlertCircle, Briefcase } from 'lucide-react';
 import { ProfitCalculator } from '../lib/calculator';
 import type { CalculationResult } from '../lib/types';
 
@@ -11,14 +11,16 @@ interface FileUploadProps {
 export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete }) => {
     const [tradesFile, setTradesFile] = useState<File | null>(null);
     const [feesFile, setFeesFile] = useState<File | null>(null);
+    const [positionsFile, setPositionsFile] = useState<File | null>(null);
     const [isCalculating, setIsCalculating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [method, setMethod] = useState<'FIFO' | 'AVG'>('FIFO');
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'trades' | 'fees') => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'trades' | 'fees' | 'positions') => {
         if (e.target.files && e.target.files[0]) {
             if (type === 'trades') setTradesFile(e.target.files[0]);
-            else setFeesFile(e.target.files[0]);
+            else if (type === 'fees') setFeesFile(e.target.files[0]);
+            else setPositionsFile(e.target.files[0]);
             setError(null);
         }
     };
@@ -44,6 +46,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                 await calculator.loadFees(feesBuffer);
             }
 
+            if (positionsFile) {
+                const positionsBuffer = await positionsFile.arrayBuffer();
+                await calculator.loadOpenPositions(positionsBuffer);
+            }
+
             const result = calculator.calculate(method);
             onCalculationComplete(result);
         } catch (err: any) {
@@ -55,7 +62,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
     };
 
     return (
-        <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto p-6 space-y-8 animate-in fade-in zoom-in duration-500">
+        <div className="flex flex-col items-center justify-center h-full max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in zoom-in duration-500">
             <div className="text-center space-y-2">
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                     Freedom24 Profit Calculator
@@ -65,9 +72,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                 {/* Trades File Input */}
-                <div className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-colors ${tradesFile ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-gray-700 hover:border-gray-500'}`}>
+                <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors text-center ${tradesFile ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-gray-700 hover:border-gray-500'}`}>
                     <input
                         type="file"
                         accept=".xlsx, .xls"
@@ -75,8 +82,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                         className="hidden"
                         id="trades-upload"
                     />
-                    <label htmlFor="trades-upload" className="cursor-pointer flex flex-col items-center gap-4">
-                        {tradesFile ? <CheckCircle className="w-12 h-12 text-emerald-400" /> : <FileSpreadsheet className="w-12 h-12 text-blue-400" />}
+                    <label htmlFor="trades-upload" className="cursor-pointer flex flex-col items-center gap-4 w-full h-full justify-center">
+                        {tradesFile ? <CheckCircle className="w-10 h-10 text-emerald-400" /> : <FileSpreadsheet className="w-10 h-10 text-blue-400" />}
                         <span className="text-sm font-medium text-gray-300">
                             {tradesFile ? tradesFile.name : "Select Trades.xlsx"}
                         </span>
@@ -84,7 +91,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                 </div>
 
                 {/* Fees File Input */}
-                <div className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-colors ${feesFile ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-gray-700 hover:border-gray-500'}`}>
+                <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors text-center ${feesFile ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-gray-700 hover:border-gray-500'}`}>
                     <input
                         type="file"
                         accept=".xlsx, .xls"
@@ -92,10 +99,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                         className="hidden"
                         id="fees-upload"
                     />
-                    <label htmlFor="fees-upload" className="cursor-pointer flex flex-col items-center gap-4">
-                        {feesFile ? <CheckCircle className="w-12 h-12 text-emerald-400" /> : <FileSpreadsheet className="w-12 h-12 text-purple-400" />}
+                    <label htmlFor="fees-upload" className="cursor-pointer flex flex-col items-center gap-4 w-full h-full justify-center">
+                        {feesFile ? <CheckCircle className="w-10 h-10 text-emerald-400" /> : <FileSpreadsheet className="w-10 h-10 text-purple-400" />}
                         <span className="text-sm font-medium text-gray-300">
                             {feesFile ? feesFile.name : "Select fees.xlsx (Optional)"}
+                        </span>
+                    </label>
+                </div>
+
+                {/* Open Positions File Input */}
+                <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors text-center ${positionsFile ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-gray-700 hover:border-gray-500'}`}>
+                    <input
+                        type="file"
+                        accept=".xlsx, .xls"
+                        onChange={(e) => handleFileChange(e, 'positions')}
+                        className="hidden"
+                        id="positions-upload"
+                    />
+                    <label htmlFor="positions-upload" className="cursor-pointer flex flex-col items-center gap-4 w-full h-full justify-center">
+                        {positionsFile ? <CheckCircle className="w-10 h-10 text-emerald-400" /> : <Briefcase className="w-10 h-10 text-amber-400" />}
+                        <span className="text-sm font-medium text-gray-300">
+                            {positionsFile ? positionsFile.name : "Current Assets (Optional)"}
                         </span>
                     </label>
                 </div>

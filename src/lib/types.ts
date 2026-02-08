@@ -27,6 +27,7 @@ export interface Lot {
     price_paid: number;
     fees_paid: number;
     currency: string;
+    market_price?: number;
 }
 
 export interface ClosedTrade {
@@ -63,6 +64,30 @@ export interface CurrencyTotals {
     net_profit: number;
 }
 
+export interface CashTransaction {
+    date: Date;
+    type: 'DEPOSIT' | 'WITHDRAWAL';
+    amount: number;
+    currency: string;
+    description: string;
+}
+
+export interface PerformanceMetrics {
+    roi: number;
+    annualizedReturn: number;
+    winLossRatio: {
+        wins: number;
+        losses: number;
+        ratio: number;
+        winRate: number;
+    };
+    averageHoldingPeriod: number;
+    bestTrades: ClosedTrade[];
+    worstTrades: number;
+    totalInvested: number;
+    currentValue: number;
+}
+
 export interface CalculationResult {
     closed_trades: ClosedTrade[];
     open_positions: Record<string, Lot[]>;
@@ -72,5 +97,9 @@ export interface CalculationResult {
     net_profit: number; // Realized - Fees + Dividends
     dividends: Dividend[];
     fees: FeeRecord[]; // Array to hold fee records for filtering
+    cash_transactions: CashTransaction[];
+    calculated_cash_balances: Record<string, number>;
     totals_by_currency: Record<string, CurrencyTotals>;
+    openPositionsSource: 'IMPORTED' | 'CALCULATED';
+    performance_metrics?: PerformanceMetrics;
 }
