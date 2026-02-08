@@ -700,11 +700,32 @@ useEffect(() => {
                              onClick={() => setActiveTab('tax')}
                              label={`Tax (${data.taxCalculations ? Object.keys(data.taxCalculations).length : 0})`}
                          />
-                         <TabButton
-                              active={activeTab === 'alerts'}
-                              onClick={() => setActiveTab('alerts')}
-                              label="Alerts"
+                    <TabButton
+                             active={activeTab === 'search'}
+                             onClick={() => setActiveTab('search')}
+                             label="Search"
                          />
+                        <TabButton
+                             active={activeTab === 'alerts'}
+                             onClick={() => setActiveTab('alerts')}
+                             label={`Alerts (${results.length})`}
+                         />
+
+                         {activeTab === 'search' && (
+                             <SearchPanel
+                                 data={data}
+                                 onSearchComplete={setResults}
+                             />
+                         )}
+
+                         {activeTab === 'alerts' && (
+                             <AlertManager 
+                                 symbols={Array.from(new Set([
+                                     ...data.closed_trades.map(t => t.ticker),
+                                     ...Object.keys(data.open_positions)
+                                 ]))}
+                             />
+                         )}
 
                          {activeTab === 'alerts' && (
                              <AlertManager 
