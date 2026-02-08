@@ -86,7 +86,7 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
                         <Globe className="text-blue-400" size={24} />
                         Tax Settings
                     </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-white">
+                    <button onClick={onClose} className="text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 rounded">
                         <X size={24} />
                     </button>
                 </div>
@@ -98,7 +98,7 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
                         className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                             activeTab === 'residency' 
                                 ? 'border-blue-500 text-white bg-gray-800/50' 
-                                : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                                : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                         }`}
                     >
                         <Globe size={16} className="inline mr-2" />
@@ -109,7 +109,7 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
                         className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                             activeTab === 'optimization' 
                                 ? 'border-blue-500 text-white bg-gray-800/50' 
-                                : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                                : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                         }`}
                     >
                         <Target size={16} className="inline mr-2" />
@@ -120,7 +120,7 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
                         className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                             activeTab === 'general' 
                                 ? 'border-blue-500 text-white bg-gray-800/50' 
-                                : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                                : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                         }`}
                     >
                         <DollarSign size={16} className="inline mr-2" />

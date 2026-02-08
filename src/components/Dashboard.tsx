@@ -404,7 +404,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                 <button
                     onClick={handleFetchRates}
                     disabled={fetchingRates}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70"
                 >
                     {fetchingRates ? 'Updating rates...' : 'Update Rates'}
                 </button>
@@ -412,28 +412,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                 <button
                     onClick={handleFetchPrices}
                     disabled={fetchingPrices || Object.keys(data.open_positions).length === 0}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm"
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70"
                 >
                     {fetchingPrices ? 'Updating prices...' : 'Update Prices'}
                 </button>
 
                 <button
                     onClick={() => exportCurrentView('pdf')}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm flex items-center gap-2"
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-100 rounded text-sm flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                 >
                     <Download size={14} /> Export PDF
                 </button>
 
                 <button
                     onClick={() => exportCurrentView('excel')}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm flex items-center gap-2"
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-100 rounded text-sm flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                 >
                     <Download size={14} /> Export Excel
                 </button>
 
                 <button
                     onClick={onReset}
-                    className="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-sm"
+                    className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/70"
                 >
                     Upload New
                 </button>
@@ -780,7 +780,7 @@ const KpiCard: React.FC<{ title: string; value: string; icon: React.ReactNode; t
 const TabButton: React.FC<{ active: boolean; onClick: () => void; label: string }> = ({ active, onClick, label }) => (
     <button
         onClick={onClick}
-        className={`px-3 py-2 text-sm border-b-2 ${active ? 'border-blue-500 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}
+        className={`px-3 py-2 text-sm border-b-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 ${active ? 'border-blue-500 text-white bg-white/5' : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'}`}
     >
         {label}
     </button>

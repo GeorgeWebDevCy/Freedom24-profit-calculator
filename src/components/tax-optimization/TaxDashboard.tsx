@@ -145,7 +145,7 @@ export const TaxDashboard: React.FC<TaxDashboardProps> = ({ data, onRefresh }) =
                 <div className="flex gap-4 items-center">
                     <button
                         onClick={() => setShowSettings(true)}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                         title="Tax Settings"
                     >
                         <Settings size={18} />
@@ -153,7 +153,7 @@ export const TaxDashboard: React.FC<TaxDashboardProps> = ({ data, onRefresh }) =
                     <button
                         onClick={calculateTaxData}
                         disabled={loading}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 rounded text-gray-300 hover:text-white disabled:text-gray-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                         title="Refresh Tax Data"
                     >
                         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />

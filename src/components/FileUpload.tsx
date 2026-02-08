@@ -129,13 +129,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onCalculationComplete })
                 <span className="text-sm text-gray-400 px-2">Cost Basis:</span>
                 <button
                     onClick={() => setMethod('FIFO')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${method === 'FIFO' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${method === 'FIFO' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-gray-200 hover:text-white hover:bg-gray-700/60'}`}
                 >
                     FIFO
                 </button>
                 <button
                     onClick={() => setMethod('AVG')}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${method === 'AVG' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-gray-400 hover:text-white'}`}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${method === 'AVG' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-gray-200 hover:text-white hover:bg-gray-700/60'}`}
                 >
                     Avg Cost
                 </button>

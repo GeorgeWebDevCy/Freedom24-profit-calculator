@@ -68,7 +68,7 @@ export const CreateAlertModal: React.FC<CreateAlertModalProps> = ({
                     <h2 className="text-xl font-bold">
                         {alert ? 'Edit Alert' : 'Create New Alert'}
                     </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-white">
+                    <button onClick={onClose} className="text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 rounded">
                         <X size={24} />
                     </button>
                 </div>
@@ -266,7 +266,7 @@ export const CreateAlertModal: React.FC<CreateAlertModalProps> = ({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium"
+                            className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-100 border border-gray-700 rounded-lg font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                         >
                             Cancel
                         </button>

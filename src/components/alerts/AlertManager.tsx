@@ -138,14 +138,14 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                 <div className="flex gap-2 items-center">
                     <button
                         onClick={() => setShowTemplates(true)}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                         title="Alert Templates"
                     >
                         <Target size={18} />
                     </button>
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                         title="Settings"
                     >
                         <Settings size={18} />
@@ -160,7 +160,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                     className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                         activeTab === 'active' 
                             ? 'border-blue-500 text-white bg-gray-800/50' 
-                            : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                            : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                     }`}
                 >
                     Active Alerts ({activeAlerts.length})
@@ -170,7 +170,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                     className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                         activeTab === 'history' 
                             ? 'border-blue-500 text-white bg-gray-800/50' 
-                            : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                            : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                     }`}
                 >
                     History ({notifications.length})
@@ -180,7 +180,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                     className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                         activeTab === 'settings' 
                             ? 'border-blue-500 text-white bg-gray-800/50' 
-                            : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
+                            : 'border-transparent text-gray-300 hover:text-white hover:bg-white/5'
                     }`}
                 >
                     Settings
@@ -241,21 +241,21 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => setEditingAlert(alert)}
-                                                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                                                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                                                     title="Edit Alert"
                                                 >
                                                     <Edit2 size={16} />
                                                 </button>
                                                 <button
                                                     onClick={() => toggleAlert(alert.id)}
-                                                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                                                    className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                                                     title={alert.isActive ? 'Pause Alert' : 'Resume Alert'}
                                                 >
                                                     {alert.isActive ? <EyeOff size={16} /> : <Eye size={16} />}
                                                 </button>
                                                 <button
                                                     onClick={() => deleteAlert(alert.id)}
-                                                    className="p-2 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 hover:text-red-300"
+                                                    className="p-2 bg-red-600/20 hover:bg-red-600/35 rounded text-red-300 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
                                                     title="Delete Alert"
                                                 >
                                                     <Trash2 size={16} />
@@ -310,7 +310,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({ symbols, onAlertsCha
                                                     {!notification.read && (
                                                         <button
                                                             onClick={() => markNotificationRead(notification.id)}
-                                                            className="text-blue-400 hover:text-blue-300 text-sm ml-2"
+                                                            className="text-blue-300 hover:text-blue-200 text-sm ml-2"
                                                         >
                                                             Mark as read
                                                         </button>

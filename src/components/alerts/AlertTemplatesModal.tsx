@@ -42,7 +42,7 @@ export const AlertTemplatesModal: React.FC<AlertTemplatesModalProps> = ({
                         <Target className="text-blue-400" size={24} />
                         Alert Templates
                     </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-white">
+                    <button onClick={onClose} className="text-gray-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 rounded">
                         <X size={24} />
                     </button>
                 </div>
@@ -77,8 +77,8 @@ export const AlertTemplatesModal: React.FC<AlertTemplatesModalProps> = ({
                                             <div className="text-right">
                                                 {template.template.type === 'price_above' && `> ${formatCurrency(template.template.threshold)}`}
                                                 {template.template.type === 'price_below' && `< ${formatCurrency(template.template.threshold)}`}
-                                                {template.template.type === 'percentage_change' && `±${template.template.threshold}%`}
-                                                {template.template.type === 'portfolio_value' && `±${template.template.threshold}%`}
+                                                {template.template.type === 'percentage_change' && `+/-${template.template.threshold}%`}
+                                                {template.template.type === 'portfolio_value' && `+/-${template.template.threshold}%`}
                                             </div>
                                         </div>
                                     </div>
@@ -114,8 +114,8 @@ export const AlertTemplatesModal: React.FC<AlertTemplatesModalProps> = ({
                                         <div className="text-right">
                                             {template.template.type === 'price_above' && `> ${formatCurrency(template.template.threshold)}`}
                                             {template.template.type === 'price_below' && `< ${formatCurrency(template.template.threshold)}`}
-                                            {template.template.type === 'percentage_change' && `±${template.template.threshold}%`}
-                                            {template.template.type === 'portfolio_value' && `±${template.template.threshold}%`}
+                                            {template.template.type === 'percentage_change' && `+/-${template.template.threshold}%`}
+                                            {template.template.type === 'portfolio_value' && `+/-${template.template.threshold}%`}
                                         </div>
                                     </div>
                                 </div>
@@ -128,7 +128,7 @@ export const AlertTemplatesModal: React.FC<AlertTemplatesModalProps> = ({
                 <div className="flex justify-end p-6 border-t border-gray-700">
                     <button
                         onClick={onClose}
-                        className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium"
+                        className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-gray-100 border border-gray-700 rounded-lg font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60"
                     >
                         Close
                     </button>
