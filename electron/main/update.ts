@@ -1,4 +1,3 @@
-import { app, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import type {
   AppUpdater,
@@ -6,6 +5,7 @@ import type {
   UpdateDownloadedEvent,
   UpdateInfo,
 } from 'electron-updater'
+import { app, ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 
 const require = createRequire(import.meta.url)
 let cachedAutoUpdater: AppUpdater | null = null
@@ -24,36 +24,41 @@ function resolveAutoUpdater(): AppUpdater | null {
   return cachedAutoUpdater
 }
 
-export function update(win: Electron.BrowserWindow) {
-  const autoUpdater = resolveAutoUpdater()
-  if (!autoUpdater) {
-    ipcMain.handle('check-update', async () => {
+export function update(win: BrowserWindow) {
+  let listenersAttached = false
+
+  const attachListeners = (autoUpdater: AppUpdater) => {
+    if (listenersAttached) return
+    listenersAttached = true
+
+    // When set to false, the update download will be triggered through the API
+    autoUpdater.autoDownload = false
+    autoUpdater.disableWebInstaller = false
+    autoUpdater.allowDowngrade = false
+
+    // start check
+    autoUpdater.on('checking-for-update', function () { })
+    // update available
+    autoUpdater.on('update-available', (arg: UpdateInfo) => {
+      win.webContents.send('update-can-available', { update: true, version: app.getVersion(), newVersion: arg?.version })
+    })
+    // update not available
+    autoUpdater.on('update-not-available', (arg: UpdateInfo) => {
+      win.webContents.send('update-can-available', { update: false, version: app.getVersion(), newVersion: arg?.version })
+    })
+  }
+
+  // Checking for updates
+  ipcMain.handle('check-update', async () => {
+    const autoUpdater = resolveAutoUpdater()
+    if (!autoUpdater) {
       return {
         message: 'Auto-update is unavailable in this runtime.',
         error: new Error('electron-updater could not be loaded'),
       }
-    })
-    return
-  }
+    }
+    attachListeners(autoUpdater)
 
-  // When set to false, the update download will be triggered through the API
-  autoUpdater.autoDownload = false
-  autoUpdater.disableWebInstaller = false
-  autoUpdater.allowDowngrade = false
-
-  // start check
-  autoUpdater.on('checking-for-update', function () { })
-  // update available
-  autoUpdater.on('update-available', (arg: UpdateInfo) => {
-    win.webContents.send('update-can-available', { update: true, version: app.getVersion(), newVersion: arg?.version })
-  })
-  // update not available
-  autoUpdater.on('update-not-available', (arg: UpdateInfo) => {
-    win.webContents.send('update-can-available', { update: false, version: app.getVersion(), newVersion: arg?.version })
-  })
-
-  // Checking for updates
-  ipcMain.handle('check-update', async () => {
     if (!app.isPackaged) {
       const error = new Error('The update feature is only available after the package.')
       return { message: error.message, error }
@@ -67,7 +72,17 @@ export function update(win: Electron.BrowserWindow) {
   })
 
   // Start downloading and feedback on progress
-  ipcMain.handle('start-download', (event: Electron.IpcMainInvokeEvent) => {
+  ipcMain.handle('start-download', (event: IpcMainInvokeEvent) => {
+    const autoUpdater = resolveAutoUpdater()
+    if (!autoUpdater) {
+      event.sender.send('update-error', {
+        message: 'Auto-update is unavailable in this runtime.',
+        error: new Error('electron-updater could not be loaded'),
+      })
+      return
+    }
+    attachListeners(autoUpdater)
+
     startDownload(
       autoUpdater,
       (error, progressInfo) => {
@@ -88,6 +103,8 @@ export function update(win: Electron.BrowserWindow) {
 
   // Install now
   ipcMain.handle('quit-and-install', () => {
+    const autoUpdater = resolveAutoUpdater()
+    if (!autoUpdater) return
     autoUpdater.quitAndInstall(false, true)
   })
 }
