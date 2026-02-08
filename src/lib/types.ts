@@ -245,6 +245,93 @@ export interface AlertSettings {
     desktopNotifications: boolean;
 }
 
+// Search-related interfaces
+export interface SearchQuery {
+    id: string;
+    query: string;
+    type: 'text' | 'ticker' | 'advanced';
+    filters: SearchFilters;
+    timestamp: Date;
+    results?: SearchResult[];
+    saved: boolean;
+}
+
+export interface SearchFilters {
+    dateRange?: {
+        start: Date;
+        end: Date;
+    };
+    assetTypes?: string[]; // ['stocks', 'bonds', 'etfs', etc.]
+    sectors?: string[]; // ['technology', 'healthcare', 'finance', etc.]
+    marketCap?: string[]; // ['large', 'mid', 'small', 'micro']
+    countries?: string[]; // ['US', 'UK', 'DE', etc.]
+    priceRange?: {
+        min: number;
+        max: number;
+    };
+    performance?: {
+        minReturn: number;
+        maxReturn: number;
+        minVolatility: number;
+        maxVolatility: number;
+    };
+    customFilters?: {
+        [key: string]: any;
+    };
+}
+
+export interface SearchResult {
+    id: string;
+    type: 'trade' | 'position' | 'dividend' | 'fee' | 'alert';
+    title: string;
+    description: string;
+    data: any;
+    timestamp: Date;
+    relevanceScore: number;
+}
+
+export interface SavedSearch {
+    id: string;
+    name: string;
+    query: SearchQuery;
+    timestamp: Date;
+    lastUsed?: Date;
+    useCount: number;
+    pinned: boolean;
+}
+
+export interface AdvancedSearchOperators {
+    boolean: {
+        and: boolean;
+        or: boolean;
+        not: boolean;
+    };
+    comparison: {
+        contains: string;
+        startsWith: string;
+        endsWith: string;
+        equals: string;
+        greaterThan: number;
+        lessThan: number;
+        between: { min: number; max: number };
+    };
+    date: {
+        before: Date;
+        after: Date;
+        on: Date;
+        within: number; // days
+        between: { start: Date; end: Date };
+    };
+}
+
+export interface SearchAnalytics {
+    totalSearches: number;
+    popularQueries: { query: string; count: number }[];
+    searchTrends: { term: string; frequency: number }[];
+    averageResultCount: number;
+    searchSuccessRate: number;
+}
+
 export interface AlertHistory {
     id: string;
     alertId: string;
