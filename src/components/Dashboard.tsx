@@ -1,22 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Lot } from '../lib/types';
+import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Lot, TaxSettings } from '../lib/types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { ArrowDownRight, DollarSign, PieChart, Activity, FileText, Table as TableIcon, Settings, Save, X, AlertTriangle, TrendingUp, Target, Award, Clock, RefreshCw } from 'lucide-react';
+import { ArrowDownRight, DollarSign, PieChart, Activity, FileText, Table as TableIcon, Settings, Save, X, AlertTriangle, TrendingUp, Target, Award, Clock, RefreshCw, Calculator } from 'lucide-react';
 import { exportToPDF, exportToExcel } from '../lib/export';
 import { getExchangeRates, getCachedRates } from '../lib/exchange-rate-service';
 import { fetchStockPrices, type StockPrice } from '../lib/price-service';
+import { TaxDashboard } from './tax-optimization/TaxDashboard';
+import { TaxSettingsComponent } from './tax-optimization/TaxSettings';
+import { TaxCalculatorService } from '../lib/services/tax-calculator.service';
+import { AlertManager } from './alerts/AlertManager';
+import { AlertsService } from '../lib/services/alerts.service';
 
 interface DashboardProps {
     data: CalculationResult;
     onReset: () => void;
 }
 
-type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance';
+type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance' | 'tax' | 'alerts';
 
 export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
     const [selectedYear, setSelectedYear] = useState<string>('All');
     const [activeTab, setActiveTab] = useState<Tab>('trades');
     const [showSettings, setShowSettings] = useState(false);
+    const [showTaxSettings, setShowTaxSettings] = useState(false);
+    const [taxSettings, setTaxSettings] = useState<TaxSettings>(() => ({
+        residencies: TaxCalculatorService.getDefaultTaxResidencies(),
+        defaultCurrency: 'USD',
+        optimizationEnabled: true,
+        harvestThreshold: 1000,
+        washSaleEnabled: true,
+        taxLossCarryforwardEnabled: true
+    }));
+    const [alertService, setAlertService] = useState<AlertsService | null>(null);
 
     const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(() => {
         const saved = typeof window !== 'undefined' ? localStorage.getItem('f24_exchange_rates') : null;
@@ -410,9 +425,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                         </div>
                     </div>
                 </div>
-            )}
+)}
 
-            {/* Header */}
+            {/* Tax Settings Modal */}
+            {showTaxSettings && (
+                <TaxSettingsComponent
+                    settings={taxSettings}
+                    onSettingsChange={setTaxSettings}
+                    onClose={() => setShowTaxSettings(false)}
+                />
+            )}
+ 
+             {/* Header */}
             <div className="flex-none p-4 border-b border-gray-800 flex justify-between items-center bg-[#1a1a1a]">
                 <h1 className="text-xl font-bold">Portfolio Analysis</h1>
                 <div className="flex gap-4 items-center">
@@ -443,13 +467,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                         {fetchingPrices ? 'Updating...' : 'Refresh Prices'}
                     </button>
 
-                    <button
-                        onClick={() => setShowSettings(true)}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
-                        title="Settings"
-                    >
-                        <Settings size={16} /> Rates & Cash
-                    </button>
+                     <button
+                         onClick={() => setShowTaxSettings(true)}
+                         className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
+                         title="Tax Settings"
+                     >
+                         <Calculator size={16} /> Tax
+                     </button>
+
+                     <button
+                         onClick={() => setShowSettings(true)}
+                         className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
+                         title="Settings"
+                     >
+                         <Settings size={16} /> Rates & Cash
+                     </button>
 
                     <select
                         value={selectedCurrency}
@@ -622,10 +654,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                             label={`Fees (${processedData.fees.length})`}
                         />
                         <TabButton
-                            active={activeTab === 'performance'}
-                            onClick={() => setActiveTab('performance')}
-                            label="Performance"
-                        />
+                             active={activeTab === 'performance'}
+                             onClick={() => setActiveTab('performance')}
+                             label="Performance"
+                         />
+                        <TabButton
+                             active={activeTab === 'tax'}
+                             onClick={() => setActiveTab('tax')}
+                             label={`Tax (${data.taxCalculations ? Object.keys(data.taxCalculations).length : 0})`}
+                         />
                     </div>
 
                     <div className="flex-1 overflow-auto p-0">
@@ -742,7 +779,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                             </TableContainer>
                         )}
 
-                        {activeTab === 'performance' && data.performance_metrics && (
+                        {activeTab === 'tax' && (
+                             <TaxDashboard 
+                                 data={data} 
+                                 onRefresh={() => {
+                                     // Trigger tax recalculation
+                                     console.log('Refreshing tax data...');
+                                 }}
+                             />
+                         )}
+
+                         {activeTab === 'performance' && data.performance_metrics && (
                             <div className="p-4 space-y-6">
                                 {/* Summary Stats */}
                                 <div className="grid grid-cols-2 gap-4">

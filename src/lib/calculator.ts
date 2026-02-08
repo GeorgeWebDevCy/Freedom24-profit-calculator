@@ -1,7 +1,8 @@
 
 import { read, utils } from 'xlsx';
-import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Trade, Lot, CashTransaction, TradeDirection } from './types';
+import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Trade, Lot, CashTransaction, TradeDirection, TaxCalculation, TaxSettings } from './types';
 import { calculatePerformanceMetrics } from './performance-calculator';
+import { TaxCalculatorService } from './services/tax-calculator.service';
 
 export class ProfitCalculator {
     trades: Trade[] = [];
@@ -235,7 +236,7 @@ export class ProfitCalculator {
         }
     }
 
-    calculate(method: 'FIFO' | 'AVG' = 'FIFO'): CalculationResult {
+    calculate(method: 'FIFO' | 'AVG' = 'FIFO', taxSettings?: TaxSettings): CalculationResult {
         const closedTrades: ClosedTrade[] = [];
         let openPositions: Record<string, Lot[]> = {};
         const totalsByCurrency: Record<string, { realized_profit: number, fees_paid: number, dividends: number, net_profit: number }> = {};
@@ -424,6 +425,45 @@ export class ProfitCalculator {
             totalCashBalance
         );
 
+        // Calculate tax data if settings provided
+        let taxCalculations: Record<number, TaxCalculation> = {};
+        let taxLots: Record<string, any[]> = {};
+        let taxOptimizations: any[] = [];
+        let washSaleWarnings: any[] = [];
+        let harvestingOpportunities: any[] = [];
+
+        if (taxSettings && taxSettings.optimizationEnabled) {
+            const taxCalculator = new TaxCalculatorService();
+            
+            // Generate tax lots
+            taxLots = taxCalculator.generateTaxLots(this.trades);
+            
+            // Calculate tax for current year
+            const currentYear = new Date().getFullYear();
+            const residency = taxSettings.residencies.find(r => r.country === 'United States') || taxSettings.residencies[0];
+            
+            const taxCalc = taxCalculator.calculateTaxLiability(
+                currentYear,
+                residency,
+                taxLots,
+                this.dividends
+            );
+
+            taxCalculations[currentYear] = taxCalc;
+
+            // Detect wash sales if enabled
+            if (taxSettings.washSaleEnabled) {
+                washSaleWarnings = taxCalculator.detectWashSales(this.trades, taxLots);
+            }
+
+            // Identify harvesting opportunities
+            harvestingOpportunities = taxCalculator.identifyHarvestingOpportunities(
+                openPositions,
+                new Map(), // Would be populated with current prices
+                taxSettings.harvestThreshold
+            );
+        }
+
         return {
             closed_trades: closedTrades,
             open_positions: openPositions,
@@ -437,7 +477,12 @@ export class ProfitCalculator {
             calculated_cash_balances: cashBalances,
             totals_by_currency: totalsByCurrency,
             openPositionsSource: Object.keys(this.importedPositions).length > 0 ? 'IMPORTED' : 'CALCULATED',
-            performance_metrics: performanceMetrics
+            performance_metrics: performanceMetrics,
+            taxCalculations,
+            taxLots,
+            taxOptimizations,
+            washSaleWarnings,
+            harvestingOpportunities
         };
     }
 }
