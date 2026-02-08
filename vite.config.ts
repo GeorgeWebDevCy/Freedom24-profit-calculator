@@ -34,6 +34,11 @@ export default defineConfig(({ command }) => {
           },
           vite: {
             build: {
+              lib: {
+                entry: 'electron/main/index.ts',
+                formats: ['cjs'],
+                fileName: () => 'index.cjs',
+              },
               sourcemap,
               minify: isBuild,
               outDir: 'dist-electron/main',
