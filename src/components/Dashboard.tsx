@@ -17,6 +17,9 @@ interface DashboardProps {
     data: CalculationResult;
     onReset: () => void;
 }
+    data: CalculationResult;
+    onReset: () => void;
+}
 
 type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance' | 'tax' | 'alerts' | 'search';
 
@@ -35,6 +38,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
     }));
     const [alertService, setAlertService] = useState<AlertsService | null>(null);
     const [searchService, setSearchService] = useState<SearchService | null>(null);
+    const [searchResults, setSearchResults] = useState<any[]>([]);
 
     const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(() => {
         const saved = typeof window !== 'undefined' ? localStorage.getItem('f24_exchange_rates') : null;
@@ -183,10 +187,11 @@ useEffect(() => {
             service.buildSearchIndex(data);
         }
 
-        return () => {
-            searchService?.stopMonitoring?.();
+                return () => {
             alertService?.stopMonitoring?.();
+            searchService?.stopMonitoring?.();
         };
+    }, [data, alertService, searchService]);
     }, [data]);
 
     // Extract unique currencies for selection
