@@ -119,7 +119,7 @@ export class TaxReportService {
             pdf.setTextColor(0, 0, 0);
             
             washSales.forEach(wash => {
-                const washText = `⚠️ ${wash.ticker}: Loss of $${wash.potentialLoss.toFixed(2)} on ${wash.lossDate.toLocaleDateString()}, repurchased on ${wash.repurchaseDate.toLocaleDateString()}`;
+                const washText = `âš ï¸ ${wash.ticker}: Loss of $${wash.potentialLoss.toFixed(2)} on ${wash.lossDate.toLocaleDateString()}, repurchased on ${wash.repurchaseDate.toLocaleDateString()}`;
                 pdf.text(washText, 20, yPosition);
                 yPosition += 8;
             });
@@ -141,7 +141,7 @@ export class TaxReportService {
         taxCalc: TaxCalculation,
         taxLots: Record<string, TaxLot[]>,
         washSales: WashSaleWarning[]
-    ): string {
+    ): Blob {
         const workbook = XLSX.utils.book_new();
 
         // Tax Summary Sheet
@@ -187,7 +187,7 @@ export class TaxReportService {
 
         // Wash Sales Sheet (if any)
         if (washSales.length > 0) {
-            const washData = [['Ticker', 'Loss Date', 'Repurchase Date', 'Potential Loss', 'Affected Lots']];
+            const washData: any[][] = [['Ticker', 'Loss Date', 'Repurchase Date', 'Potential Loss', 'Affected Lots']];
             washSales.forEach(wash => {
                 washData.push([
                     wash.ticker,

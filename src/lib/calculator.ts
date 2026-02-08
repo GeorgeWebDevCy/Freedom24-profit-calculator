@@ -155,14 +155,27 @@ export class ProfitCalculator {
             const amountRaw = this.parseNumber(this.getValue(row, ['Amount', 'Value', 'Total', 'Sum']));
             const direction = String(this.getValue(row, ['Direction', 'Type', 'Operation', 'Action']) ?? '').toLowerCase();
             const comment = String(this.getValue(row, ['Comment', 'Description', 'Details']) ?? '');
+            const commentLower = comment.toLowerCase();
             const currency = String(this.getValue(row, ['Currency']) ?? 'USD');
             const date = this.parseDate(this.getValue(row, ['Date']));
 
             // Check for Dividend
-            const isDividend = (direction.includes('dividend')
-                || comment.toLowerCase().includes('dividend')
-                || direction.includes('div')
-                || comment.toLowerCase().includes('div payment'));
+            const mentionsDividend = (
+                direction.includes('dividend')
+                || direction.includes('div payment')
+                || commentLower.includes('dividend payment')
+                || commentLower.includes('div payment')
+            );
+            const mentionsTaxOrFee = (
+                direction.includes('tax')
+                || direction.includes('fee')
+                || direction.includes('commission')
+                || commentLower.includes('tax')
+                || commentLower.includes('fee')
+                || commentLower.includes('commission')
+                || commentLower.includes('withholding')
+            );
+            const isDividend = mentionsDividend && !mentionsTaxOrFee && amountRaw > 0;
 
             if (isDividend) {
                 const amount = Math.abs(amountRaw);
@@ -191,8 +204,8 @@ export class ProfitCalculator {
             // Check for Tax/Fee (everything else that is negative)
             // If it's not a dividend and not a transfer, assume it's a fee if explicitly marked or just negative flow
             const isTax = direction.includes('tax') || direction.includes('fee') || direction.includes('commission')
-                || comment.toLowerCase().includes('tax') || comment.toLowerCase().includes('fee')
-                || comment.toLowerCase().includes('commission');
+                || commentLower.includes('tax') || commentLower.includes('fee')
+                || commentLower.includes('commission');
 
             if (isTax || amountRaw < 0) {
                 const amount = Math.abs(amountRaw);
@@ -440,7 +453,7 @@ export class ProfitCalculator {
             
             // Calculate tax for current year
             const currentYear = new Date().getFullYear();
-            const residency = taxSettings.residencies.find(r => r.country === 'United States') || taxSettings.residencies[0];
+            const residency = taxSettings.residencies[0] || TaxCalculatorService.getDefaultTaxResidencies()[0];
             
             const taxCalc = taxCalculator.calculateTaxLiability(
                 currentYear,

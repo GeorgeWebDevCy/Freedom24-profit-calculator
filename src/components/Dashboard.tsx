@@ -1,115 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Lot, TaxSettings } from '../lib/types';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { ArrowDownRight, DollarSign, PieChart, Activity, FileText, Table as TableIcon, Settings, Save, X, AlertTriangle, TrendingUp, Target, Award, Clock, RefreshCw, Calculator } from 'lucide-react';
-import { exportToPDF, exportToExcel } from '../lib/export';
-import { getExchangeRates, getCachedRates } from '../lib/exchange-rate-service';
-import { fetchStockPrices, type StockPrice } from '../lib/price-service';
-import { TaxDashboard } from './tax-optimization/TaxDashboard';
-import { TaxSettingsComponent } from './tax-optimization/TaxSettings';
-import { TaxCalculatorService } from '../lib/services/tax-calculator.service';
-import { AlertManager } from './alerts/AlertManager';
-import { AlertsService } from '../lib/services/alerts.service';
-import { SearchPanel } from './search/SearchPanel';
-import { SearchService } from '../lib/services/search.service';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowDownRight, DollarSign, Download, PieChart, TrendingUp } from 'lucide-react';
+import { exportToExcel, exportToPDF } from '../lib/export';
+import { getCachedRates, getExchangeRates } from '../lib/exchange-rate-service';
+import { CalculationResult, ClosedTrade, Dividend, FeeRecord, Lot } from '../lib/types';
 
 interface DashboardProps {
     data: CalculationResult;
     onReset: () => void;
 }
-    data: CalculationResult;
-    onReset: () => void;
-}
 
-type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance' | 'tax' | 'alerts' | 'search';
+type Tab = 'trades' | 'positions' | 'dividends' | 'fees';
+
+type ProcessedData = {
+    closed_trades: ClosedTrade[];
+    open_positions: Record<string, Lot[]>;
+    dividends: Dividend[];
+    fees: FeeRecord[];
+    total_realized_profit: number;
+    total_dividends: number;
+    total_fees_paid: number;
+    net_profit: number;
+};
+
+type CurrencyBreakdown = Record<string, { realized_profit: number; dividends: number; fees_paid: number; net_profit: number }>;
+
+const toDate = (value: Date | string | number): Date => {
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? new Date() : d;
+};
 
 export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
-    const [selectedYear, setSelectedYear] = useState<string>('All');
     const [activeTab, setActiveTab] = useState<Tab>('trades');
-    const [showSettings, setShowSettings] = useState(false);
-    const [showTaxSettings, setShowTaxSettings] = useState(false);
-    const [taxSettings, setTaxSettings] = useState<TaxSettings>(() => ({
-        residencies: TaxCalculatorService.getDefaultTaxResidencies(),
-        defaultCurrency: 'USD',
-        optimizationEnabled: true,
-        harvestThreshold: 1000,
-        washSaleEnabled: true,
-        taxLossCarryforwardEnabled: true
-    }));
-    const [alertService, setAlertService] = useState<AlertsService | null>(null);
-    const [searchService, setSearchService] = useState<SearchService | null>(null);
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [selectedYear, setSelectedYear] = useState<string>('All');
+    const [fetchingRates, setFetchingRates] = useState(false);
+    const [ratesLastUpdated, setRatesLastUpdated] = useState<Date | null>(() => getCachedRates()?.lastUpdated ?? null);
 
     const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(() => {
-        const saved = typeof window !== 'undefined' ? localStorage.getItem('f24_exchange_rates') : null;
-        return saved ? JSON.parse(saved) : {
-            'USD': 1,
-            'EUR': 0.92, // Default to approx current rate
-            'GBP': 0.81,
-            'PLN': 4.10,
-        };
-    });
-
-    const [ratesLastUpdated, setRatesLastUpdated] = useState<Date | null>(() => {
         const cached = getCachedRates();
-        return cached ? cached.lastUpdated : null;
+        return cached?.rates ?? { USD: 1 };
     });
 
-    const [fetchingRates, setFetchingRates] = useState(false);
+    const [cashBalances, setCashBalances] = useState<Record<string, number>>(data.calculated_cash_balances ?? {});
 
-    const [stockPrices, setStockPrices] = useState<Map<string, StockPrice>>(new Map());
-    const [fetchingPrices, setFetchingPrices] = useState(false);
-    const [pricesLastUpdated, setPricesLastUpdated] = useState<Date | null>(null);
-
-    // Persist rates
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('f24_exchange_rates', JSON.stringify(exchangeRates));
-        }
-    }, [exchangeRates]);
-
-    const [cashBalances, setCashBalances] = useState<Record<string, number>>({});
-
-    // Ensure all currencies in data have a rate
-    useEffect(() => {
-        const uniqueCurrencies = new Set<string>();
-        const traverse = (items: { currency: string }[]) => items.forEach(i => uniqueCurrencies.add(i.currency));
-        traverse(data.closed_trades);
-        traverse(data.dividends);
-        traverse(data.fees);
-        Object.values(data.open_positions).flat().forEach(p => uniqueCurrencies.add(p.currency));
-        if (data.cash_transactions) data.cash_transactions.forEach(t => uniqueCurrencies.add(t.currency));
-
-        setExchangeRates(prev => {
-            // ... (existing exchange rate logic)
-            const next = { ...prev };
-            let changed = false;
-            uniqueCurrencies.forEach(c => {
-                if (!next[c]) {
-                    next[c] = 1;
-                    changed = true;
-                }
-            });
-            return changed ? next : prev;
-        });
-
-        // Initialize cash balances from calculated values if available, respecting manual edits if we had a persistent store (which we don't yet)
-        // For now, simple override: if calculated > 0 or explicit, use it.
-        // But we want to preserve user edits if they change tabs? 
-        // Actually, on "data" change (file import), we should reset to calculated.
-
-        if (data.calculated_cash_balances) {
-            setCashBalances(prev => {
-                // Merge calculated with existing? Or just set to calculated?
-                // If data changed, likely a new file load -> set to calculated.
-                return { ...data.calculated_cash_balances };
-            });
-        }
+        setCashBalances(data.calculated_cash_balances ?? {});
     }, [data]);
 
-    // Auto-fetch exchange rates on mount if cache is stale
     useEffect(() => {
-        const initRates = async () => {
+        const syncRates = async () => {
             try {
                 const result = await getExchangeRates('USD', false);
                 if (!result.fromCache) {
@@ -117,165 +55,102 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
                     setRatesLastUpdated(result.lastUpdated);
                 }
             } catch (error) {
-                console.error('Failed to auto-fetch exchange rates:', error);
+                console.error('Failed to sync exchange rates', error);
             }
         };
-        initRates();
+
+        syncRates();
     }, []);
 
-    // Handler to manually fetch latest rates
-    const handleFetchRates = async () => {
-        setFetchingRates(true);
-        try {
-            const result = await getExchangeRates('USD', true);
-            setExchangeRates(result.rates);
-            setRatesLastUpdated(result.lastUpdated);
-        } catch (error) {
-            console.error('Failed to fetch exchange rates:', error);
-            alert('Failed to fetch exchange rates. Please check your internet connection.');
-        } finally {
-            setFetchingRates(false);
-        }
-    };
+    const currencies = useMemo(() => {
+        const values = new Set<string>(['USD']);
+        data.closed_trades.forEach((t) => values.add(t.currency));
+        data.dividends.forEach((d) => values.add(d.currency));
+        data.fees.forEach((f) => values.add(f.currency));
+        Object.values(data.open_positions)
+            .flat()
+            .forEach((lot) => values.add(lot.currency));
+        Object.keys(cashBalances).forEach((currency) => values.add(currency));
+        Object.keys(exchangeRates).forEach((currency) => values.add(currency));
 
-    // Initialize alerts service
-    useEffect(() => {
-        const settings = AlertsService.getDefaultSettings();
-        const service = new AlertsService(settings);
-        setAlertService(service);
-
-        // Get symbols from data for monitoring
-        const symbols = new Set<string>();
-        data.closed_trades.forEach(trade => symbols.add(trade.ticker));
-        Object.keys(data.open_positions).forEach(ticker => symbols.add(ticker));
-
-        if (symbols.size > 0) {
-            service.startMonitoring(Array.from(symbols));
-        }
-
-        return () => {
-            service.stopMonitoring();
-        };
-    }, [data]);
-
-    // Initialize services
-useEffect(() => {
-        // Initialize alerts service
-        if (!alertService) {
-            const alertSettings = AlertsService.getDefaultSettings();
-            const service = new AlertsService(alertSettings);
-            setAlertService(service);
-
-            // Get symbols from data for monitoring
-            const symbols = new Set<string>();
-            data.closed_trades.forEach(trade => symbols.add(trade.ticker));
-            Object.keys(data.open_positions).forEach(ticker => symbols.add(ticker));
-
-            if (symbols.size > 0) {
-                service.startMonitoring(Array.from(symbols));
-            }
-        }
-
-        // Initialize search service
-        if (!searchService) {
-            const service = new SearchService();
-            setSearchService(service);
-        }
-
-        // Build search index if not exists
-        if (data.closed_trades.length > 0 || Object.keys(data.open_positions).length > 0) {
-            service.buildSearchIndex(data);
-        }
-
-return () => {
-            searchService?.stopMonitoring?.();
-            alertService?.stopMonitoring?.();
-        };
-    }, [data, alertService, searchService]);
-
-    // Extract unique currencies for selection
-    const currencies = React.useMemo(() => {
-        // Combine currencies from exchange rates and cash balances
-        const allCurrencies = new Set([...Object.keys(exchangeRates), ...Object.keys(cashBalances)]);
-        return Array.from(allCurrencies).sort();
-    }, [exchangeRates, cashBalances]);
+        return Array.from(values).sort();
+    }, [cashBalances, data, exchangeRates]);
 
     const [selectedCurrency, setSelectedCurrency] = useState<string>('EUR');
 
-    // Extract unique years
-    const years = React.useMemo(() => {
-        const years = new Set<string>();
-        data.closed_trades.forEach(t => years.add(t.date.getFullYear().toString()));
-        data.dividends.forEach(d => years.add(d.date.getFullYear().toString()));
-        data.fees.forEach(f => years.add(f.date.getFullYear().toString()));
-        return Array.from(years).sort().reverse();
+    useEffect(() => {
+        if (currencies.length > 0 && !currencies.includes(selectedCurrency)) {
+            setSelectedCurrency(currencies[0]);
+        }
+    }, [currencies, selectedCurrency]);
+
+    const years = useMemo(() => {
+        const result = new Set<string>();
+
+        data.closed_trades.forEach((t) => result.add(toDate(t.date).getFullYear().toString()));
+        data.dividends.forEach((d) => result.add(toDate(d.date).getFullYear().toString()));
+        data.fees.forEach((f) => result.add(toDate(f.date).getFullYear().toString()));
+
+        return Array.from(result).sort((a, b) => Number(b) - Number(a));
     }, [data]);
 
-    // Conversion helper
-    const convert = (amount: number, from: string, to: string) => {
+    const convert = (amount: number, from: string, to: string): number => {
         if (from === to) return amount;
-        const rateFrom = exchangeRates[from] || 1;
-        const rateTo = exchangeRates[to] || 1;
-        // Convert to USD (base 1), then to target
-        // amount / rateFrom = amountInUSD
-        // amountInUSD * rateTo = amountInTarget
-        return (amount / rateFrom) * rateTo;
+        const fromRate = exchangeRates[from] ?? 1;
+        const toRate = exchangeRates[to] ?? 1;
+        return (amount / fromRate) * toRate;
     };
 
-    // Filter AND Convert data based on selected year AND currency
-    const processedData = React.useMemo(() => {
-        const year = selectedYear === 'All' ? null : parseInt(selectedYear);
+    const rawYearFilteredData = useMemo(() => {
+        const year = selectedYear === 'All' ? null : Number(selectedYear);
 
-        const convertTrade = (t: ClosedTrade): ClosedTrade => ({
+        const closed = data.closed_trades.filter((t) => year === null || toDate(t.date).getFullYear() === year);
+        const dividends = data.dividends.filter((d) => year === null || toDate(d.date).getFullYear() === year);
+        const fees = data.fees.filter((f) => year === null || toDate(f.date).getFullYear() === year);
+
+        return { closed, dividends, fees };
+    }, [data, selectedYear]);
+
+    const processedData = useMemo<ProcessedData>(() => {
+        const closed_trades = rawYearFilteredData.closed.map((t) => ({
             ...t,
-            // Convert monetary values
+            date: toDate(t.date),
             sell_price: convert(t.sell_price, t.currency, selectedCurrency),
             sell_fees: convert(t.sell_fees, t.currency, selectedCurrency),
             cost_basis: convert(t.cost_basis, t.currency, selectedCurrency),
             realized_profit: convert(t.realized_profit, t.currency, selectedCurrency),
             sale_proceeds: convert(t.sale_proceeds, t.currency, selectedCurrency),
-            currency: selectedCurrency // It's now in the target currency
-        });
+            currency: selectedCurrency,
+        }));
 
-        const convertDiv = (d: Dividend): Dividend => ({
+        const dividends = rawYearFilteredData.dividends.map((d) => ({
             ...d,
+            date: toDate(d.date),
             amount: convert(d.amount, d.currency, selectedCurrency),
-            currency: selectedCurrency
-        });
+            currency: selectedCurrency,
+        }));
 
-        const convertFee = (f: FeeRecord): FeeRecord => ({
+        const fees = rawYearFilteredData.fees.map((f) => ({
             ...f,
+            date: toDate(f.date),
             amount: convert(f.amount, f.currency, selectedCurrency),
-            currency: selectedCurrency
-        });
+            currency: selectedCurrency,
+        }));
 
-        // 1. Filter by Year
-        // 2. Map to convert currency
-        const closed_trades = data.closed_trades
-            .filter(t => year === null || t.date.getFullYear() === year)
-            .map(convertTrade);
-
-        const dividends = data.dividends
-            .filter(d => year === null || d.date.getFullYear() === year)
-            .map(convertDiv);
-
-        const fees = data.fees
-            .filter(f => year === null || f.date.getFullYear() === year)
-            .map(convertFee);
-
-        // Filter open positions? Usually we want to see all current assets
-        // But maybe we want to see them converted.
         const open_positions: Record<string, Lot[]> = {};
-        for (const [ticker, lots] of Object.entries(data.open_positions)) {
-            open_positions[ticker] = lots.map(l => ({
-                ...l,
-                unit_cost: convert(l.unit_cost, l.currency, selectedCurrency),
-                market_price: l.market_price ? convert(l.market_price, l.currency, selectedCurrency) : undefined,
-                price_paid: convert(l.price_paid, l.currency, selectedCurrency),
-                fees_paid: convert(l.fees_paid, l.currency, selectedCurrency),
-                currency: selectedCurrency
+        Object.entries(data.open_positions).forEach(([ticker, lots]) => {
+            open_positions[ticker] = lots.map((lot) => ({
+                ...lot,
+                date: toDate(lot.date),
+                unit_cost: convert(lot.unit_cost, lot.currency, selectedCurrency),
+                price_paid: convert(lot.price_paid, lot.currency, selectedCurrency),
+                fees_paid: convert(lot.fees_paid, lot.currency, selectedCurrency),
+                market_price: lot.market_price !== undefined
+                    ? convert(lot.market_price, lot.currency, selectedCurrency)
+                    : undefined,
+                currency: selectedCurrency,
             }));
-        }
+        });
 
         const total_realized_profit = closed_trades.reduce((sum, t) => sum + t.realized_profit, 0);
         const total_dividends = dividends.reduce((sum, d) => sum + d.amount, 0);
@@ -283,548 +158,356 @@ return () => {
 
         return {
             closed_trades,
+            open_positions,
             dividends,
             fees,
-            open_positions,
             total_realized_profit,
             total_dividends,
             total_fees_paid,
-            net_profit: total_realized_profit - total_fees_paid + total_dividends
+            net_profit: total_realized_profit - total_fees_paid + total_dividends,
         };
-    }, [data, selectedYear, selectedCurrency, exchangeRates]);
+    }, [data.open_positions, rawYearFilteredData, selectedCurrency]);
 
-    // Sort closed trades by date
-    const sortedTrades = [...processedData.closed_trades].sort((a, b) => b.date.getTime() - a.date.getTime()); // Newer first
+    const currencyBreakdown = useMemo<CurrencyBreakdown>(() => {
+        const breakdown: CurrencyBreakdown = {};
 
-    let cumulative = 0;
-    // For chart we need chronological order
-    const chartData = [...processedData.closed_trades].sort((a, b) => a.date.getTime() - b.date.getTime()).map(t => {
-        cumulative += t.realized_profit;
-        return {
-            date: t.date.toLocaleDateString(),
-            profit: t.realized_profit,
-            cumulative: cumulative
-        };
-    });
-
-    const profitByTicker = new Map<string, number>();
-    for (const trade of processedData.closed_trades) {
-        profitByTicker.set(trade.ticker, (profitByTicker.get(trade.ticker) || 0) + trade.realized_profit);
-    }
-    const tickerData = [...profitByTicker.entries()]
-        .map(([ticker, profit]) => ({ ticker, profit }))
-        .sort((a, b) => b.profit - a.profit)
-        .slice(0, 20); // Top 20
-
-    // Flatten open positions for table
-    const flatOpenPositions = Object.values(processedData.open_positions).flat();
-    // Group by ticker for display (since we already flattened logic per lot in calculator, but UI wants summary per ticker)
-    const openPositionsSummary = Object.entries(processedData.open_positions)
-        .map(([ticker, lots]) => {
-            const totalQty = lots.reduce((sum, lot) => sum + lot.quantity, 0);
-            const totalCost = lots.reduce((sum, lot) => sum + lot.price_paid, 0); // price_paid is already quantity * unit_cost
-
-            // Use fetched price if available, otherwise fall back to lot's market_price or unit_cost
-            const fetchedPrice = stockPrices.get(ticker);
-            let currentPrice: number;
-
-            if (fetchedPrice) {
-                // Convert fetched price to selected currency
-                currentPrice = convert(fetchedPrice.price, fetchedPrice.currency, selectedCurrency);
-            } else {
-                // Fall back to existing market price or unit cost
-                const avgMarketPrice = lots.reduce((sum, lot) => sum + (lot.market_price ?? lot.unit_cost), 0) / lots.length;
-                currentPrice = avgMarketPrice;
+        const init = (currency: string) => {
+            if (!breakdown[currency]) {
+                breakdown[currency] = { realized_profit: 0, dividends: 0, fees_paid: 0, net_profit: 0 };
             }
+        };
 
-            // Market value is qty * market_price (or unit_cost if missing)
-            const totalMarketValue = totalQty * currentPrice;
-            const avgCost = totalQty > 0 ? totalCost / totalQty : 0;
-            return {
-                ticker,
-                quantity: totalQty,
-                avg_cost: avgCost,
-                total_cost: totalCost,
-                market_value: totalMarketValue,
-                unrealized_profit: totalMarketValue - totalCost,
-                current_price: currentPrice,
-                has_live_price: !!fetchedPrice
-            };
-        }).sort((a, b) => a.ticker.localeCompare(b.ticker));
+        rawYearFilteredData.closed.forEach((t) => {
+            init(t.currency);
+            breakdown[t.currency].realized_profit += t.realized_profit;
+        });
 
+        rawYearFilteredData.dividends.forEach((d) => {
+            init(d.currency);
+            breakdown[d.currency].dividends += d.amount;
+        });
 
-    const formatCurrency = (val: number | undefined) => {
-        if (val === undefined || val === null) return '';
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: selectedCurrency, maximumFractionDigits: 2 }).format(val);
-    };
+        rawYearFilteredData.fees.forEach((f) => {
+            init(f.currency);
+            breakdown[f.currency].fees_paid += f.amount;
+        });
 
-    const handleRateChange = (currency: string, newRate: string) => {
-        const rate = parseFloat(newRate);
-        if (!isNaN(rate)) {
-            setExchangeRates(prev => ({ ...prev, [currency]: rate }));
-        }
-    };
+        Object.values(breakdown).forEach((row) => {
+            row.net_profit = row.realized_profit - row.fees_paid + row.dividends;
+        });
 
-    const handleCashChange = (currency: string, newValue: string) => {
-        const val = parseFloat(newValue);
-        if (!isNaN(val)) {
-            setCashBalances(prev => ({ ...prev, [currency]: val }));
-        }
-    };
+        return breakdown;
+    }, [rawYearFilteredData]);
 
-    // Calculate total net assets
-    const totalMarketValue = openPositionsSummary.reduce((sum, p) => sum + p.market_value, 0);
-    const totalCashValue = Object.entries(cashBalances).reduce((sum, [curr, amount]) => {
-        return sum + convert(amount, curr, selectedCurrency);
-    }, 0);
+    const openPositionsSummary = useMemo(() => {
+        return Object.entries(processedData.open_positions)
+            .map(([ticker, lots]) => {
+                const quantity = lots.reduce((sum, lot) => sum + lot.quantity, 0);
+                const totalCost = lots.reduce((sum, lot) => sum + lot.quantity * lot.unit_cost, 0);
+                const marketValue = lots.reduce((sum, lot) => sum + lot.quantity * (lot.market_price ?? lot.unit_cost), 0);
+
+                return {
+                    ticker,
+                    quantity,
+                    avgCost: quantity ? totalCost / quantity : 0,
+                    totalCost,
+                    marketValue,
+                    unrealized: marketValue - totalCost,
+                };
+            })
+            .sort((a, b) => a.ticker.localeCompare(b.ticker));
+    }, [processedData.open_positions]);
+
+    const totalMarketValue = openPositionsSummary.reduce((sum, p) => sum + p.marketValue, 0);
+
+    const totalCashValue = useMemo(() => {
+        return Object.entries(cashBalances).reduce((sum, [currency, amount]) => {
+            return sum + convert(amount, currency, selectedCurrency);
+        }, 0);
+    }, [cashBalances, selectedCurrency, exchangeRates]);
+
     const netAssets = totalMarketValue + totalCashValue;
 
+    const handleFetchRates = async () => {
+        setFetchingRates(true);
+        try {
+            const result = await getExchangeRates('USD', true);
+            setExchangeRates(result.rates);
+            setRatesLastUpdated(result.lastUpdated);
+        } catch (error) {
+            console.error('Failed to refresh rates', error);
+            alert('Failed to fetch exchange rates.');
+        } finally {
+            setFetchingRates(false);
+        }
+    };
+
+    const formatCurrency = (value: number, currencyOverride?: string): string => {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currencyOverride ?? selectedCurrency,
+            maximumFractionDigits: 2,
+        }).format(value);
+    };
+
+    const exportCurrentView = (format: 'pdf' | 'excel') => {
+        const exportData: CalculationResult = {
+            ...data,
+            closed_trades: processedData.closed_trades,
+            open_positions: processedData.open_positions,
+            total_realized_profit: processedData.total_realized_profit,
+            total_dividends: processedData.total_dividends,
+            total_fees_paid: processedData.total_fees_paid,
+            net_profit: processedData.net_profit,
+            dividends: processedData.dividends,
+            fees: processedData.fees,
+            cash_transactions: data.cash_transactions.map((t) => ({
+                ...t,
+                date: toDate(t.date),
+                amount: convert(t.amount, t.currency, selectedCurrency),
+                currency: selectedCurrency,
+            })),
+            calculated_cash_balances: { [selectedCurrency]: totalCashValue },
+            totals_by_currency: {
+                [selectedCurrency]: {
+                    realized_profit: processedData.total_realized_profit,
+                    dividends: processedData.total_dividends,
+                    fees_paid: processedData.total_fees_paid,
+                    net_profit: processedData.net_profit,
+                },
+            },
+            openPositionsSource: data.openPositionsSource,
+        };
+
+        if (format === 'pdf') {
+            exportToPDF(exportData, selectedYear);
+        } else {
+            exportToExcel(exportData, selectedYear);
+        }
+    };
+
+    const sortedTrades = [...processedData.closed_trades].sort((a, b) => toDate(b.date).getTime() - toDate(a.date).getTime());
+
     return (
-        <div className="h-screen flex flex-col bg-[#121212] text-white overflow-hidden relative">
-            {/* Settings Modal */}
-            {showSettings && (
-                <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-                    <div className="bg-[#1a1a1a] border border-gray-700 rounded-lg p-6 max-w-md w-full shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="flex justify-between items-center mb-4 flex-none">
-                            <h2 className="text-xl font-bold flex items-center gap-2">
-                                <Settings className="text-blue-400" /> Settings
-                            </h2>
-                            <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white">
-                                <X size={24} />
-                            </button>
-                        </div>
+        <div className="h-screen overflow-hidden bg-[#121212] text-white flex flex-col">
+            <div className="border-b border-gray-800 px-4 py-3 flex flex-wrap items-center gap-3">
+                <h1 className="text-lg font-semibold">Freedom24 Dashboard</h1>
 
-                        <div className="flex-1 overflow-auto space-y-6">
-                            {/* Exchange Rates Section */}
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <h3 className="text-sm font-semibold text-gray-300 border-b border-gray-700 pb-1 flex-1">Exchange Rates (Base USD)</h3>
-                                    <button
-                                        onClick={handleFetchRates}
-                                        disabled={fetchingRates}
-                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
-                                        title="Fetch latest exchange rates"
-                                    >
-                                        <RefreshCw size={14} className={fetchingRates ? 'animate-spin' : ''} />
-                                        {fetchingRates ? 'Fetching...' : 'Update Rates'}
-                                    </button>
-                                </div>
-                                {ratesLastUpdated && (
-                                    <p className="text-xs text-gray-500 mb-2">
-                                        Last updated: {ratesLastUpdated.toLocaleString()}
-                                    </p>
-                                )}
-                                <p className="text-xs text-gray-400 mb-2">Example: 1 USD = 0.95 EUR</p>
-                                <div className="space-y-2">
-                                    {Object.entries(exchangeRates).map(([curr, rate]) => (
-                                        <div key={curr} className="flex items-center justify-between bg-gray-800 p-2 rounded">
-                                            <span className="font-bold text-blue-400 w-12">{curr}</span>
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="number"
-                                                    value={rate}
-                                                    onChange={(e) => handleRateChange(curr, e.target.value)}
-                                                    step="0.0001"
-                                                    className="bg-gray-900 border border-gray-700 rounded px-2 py-1 w-24 text-right outline-none focus:border-blue-500 text-sm"
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Cash Balances Section */}
-                            <div>
-                                <h3 className="text-sm font-semibold text-gray-300 mb-2 border-b border-gray-700 pb-1">Cash Balances</h3>
-                                <p className="text-xs text-gray-400 mb-2">Enter cash held in each currency</p>
-                                <div className="space-y-2">
-                                    {Object.entries(cashBalances).map(([curr, amount]) => (
-                                        <div key={curr} className="flex items-center justify-between bg-gray-800 p-2 rounded">
-                                            <span className="font-bold text-green-400 w-12">{curr}</span>
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="number"
-                                                    value={amount}
-                                                    onChange={(e) => handleCashChange(curr, e.target.value)}
-                                                    step="0.01"
-                                                    className="bg-gray-900 border border-gray-700 rounded px-2 py-1 w-24 text-right outline-none focus:border-green-500 text-sm"
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 flex justify-end flex-none pt-4 border-t border-gray-700">
-                            <button
-                                onClick={() => setShowSettings(false)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium flex items-center gap-2"
-                            >
-                                <Save size={18} /> Done
-                            </button>
-                        </div>
-                    </div>
-                </div>
-)}
-
-            {/* Tax Settings Modal */}
-            {showTaxSettings && (
-                <TaxSettingsComponent
-                    settings={taxSettings}
-                    onSettingsChange={setTaxSettings}
-                    onClose={() => setShowTaxSettings(false)}
-                />
-            )}
- 
-             {/* Header */}
-            <div className="flex-none p-4 border-b border-gray-800 flex justify-between items-center bg-[#1a1a1a]">
-                <h1 className="text-xl font-bold">Portfolio Analysis</h1>
-                <div className="flex gap-4 items-center">
-                    <div className="flex bg-gray-800 rounded-lg p-1 gap-1">
-                        <button
-                            onClick={() => exportToPDF(processedData as any, selectedYear)}
-                            className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
-                            title="Export PDF"
-                        >
-                            <FileText size={18} />
-                        </button>
-                        <button
-                            onClick={() => exportToExcel(processedData as any, selectedYear)}
-                            className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
-                            title="Export Excel"
-                        >
-                            <TableIcon size={18} />
-                        </button>
-                    </div>
-
-                    <button
-                        onClick={handleFetchPrices}
-                        disabled={fetchingPrices || Object.keys(data.open_positions).length === 0}
-                        className="p-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:cursor-not-allowed rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
-                        title={pricesLastUpdated ? `Last updated: ${pricesLastUpdated.toLocaleTimeString()}` : 'Refresh stock prices'}
-                    >
-                        <RefreshCw size={16} className={fetchingPrices ? 'animate-spin' : ''} />
-                        {fetchingPrices ? 'Updating...' : 'Refresh Prices'}
-                    </button>
-
-                     <button
-                         onClick={() => setShowTaxSettings(true)}
-                         className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
-                         title="Tax Settings"
-                     >
-                         <Calculator size={16} /> Tax
-                     </button>
-
-                     <button
-                         onClick={() => setShowSettings(true)}
-                         className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
-                         title="Settings"
-                     >
-                         <Settings size={16} /> Rates & Cash
-                     </button>
-
-                    <select
-                        value={selectedCurrency}
-                        onChange={(e) => setSelectedCurrency(e.target.value)}
-                        className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-1 outline-none focus:border-blue-500 text-sm"
-                    >
-                        {currencies.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                        ))}
-                    </select>
-
+                <div className="flex items-center gap-2 ml-auto">
+                    <label className="text-sm text-gray-400">Year</label>
                     <select
                         value={selectedYear}
-                        onChange={(e) => setSelectedYear(e.target.value)}
-                        className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-1 outline-none focus:border-blue-500 text-sm"
+                        onChange={(event) => setSelectedYear(event.target.value)}
+                        className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
                     >
-                        <option value="All">All Time</option>
-                        {years.map(y => (
-                            <option key={y} value={y}>{y}</option>
+                        <option value="All">All</option>
+                        {years.map((year) => (
+                            <option key={year} value={year}>{year}</option>
                         ))}
                     </select>
-                    <button onClick={onReset} className="text-sm text-gray-400 hover:text-white underline">
-                        Upload New
-                    </button>
                 </div>
+
+                <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-400">Currency</label>
+                    <select
+                        value={selectedCurrency}
+                        onChange={(event) => setSelectedCurrency(event.target.value)}
+                        className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                    >
+                        {currencies.map((currency) => (
+                            <option key={currency} value={currency}>{currency}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <button
+                    onClick={handleFetchRates}
+                    disabled={fetchingRates}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-sm"
+                >
+                    {fetchingRates ? 'Updating rates...' : 'Update Rates'}
+                </button>
+
+                <button
+                    onClick={() => exportCurrentView('pdf')}
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm flex items-center gap-2"
+                >
+                    <Download size={14} /> Export PDF
+                </button>
+
+                <button
+                    onClick={() => exportCurrentView('excel')}
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm flex items-center gap-2"
+                >
+                    <Download size={14} /> Export Excel
+                </button>
+
+                <button
+                    onClick={onReset}
+                    className="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-sm"
+                >
+                    Upload New
+                </button>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col p-4 space-y-4">
-                <div className="flex-none grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <KpiCard
-                        title="Net Assets"
-                        value={netAssets}
-                        format={formatCurrency}
-                        icon={<PieChart size={18} />}
-                        color="amber"
-                    />
-                    <KpiCard
-                        title="Net Profit"
-                        value={processedData.net_profit}
-                        format={formatCurrency}
-                        icon={<DollarSign size={18} />}
-                        color="emerald"
-                        warnIfNegative
-                    />
-                    <KpiCard
-                        title="Realized Profit"
-                        value={processedData.total_realized_profit}
-                        format={formatCurrency}
-                        icon={<Activity size={18} />}
-                        color="blue"
-                    />
-                    <KpiCard
-                        title="Dividends"
-                        value={processedData.total_dividends}
-                        format={formatCurrency}
-                        icon={<DollarSign size={18} />}
-                        color="green"
-                    />
-                    <KpiCard
-                        title="Fees"
-                        value={processedData.total_fees_paid}
-                        format={formatCurrency}
-                        icon={<ArrowDownRight size={18} />}
-                        color="purple"
-                    />
+            <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-800">
+                Rates source base: USD
+                {ratesLastUpdated ? ` | Last updated: ${ratesLastUpdated.toLocaleString()}` : ''}
+            </div>
+
+            <div className="p-4 space-y-4 overflow-auto">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <KpiCard title="Net Assets" value={formatCurrency(netAssets)} icon={<PieChart size={16} />} tone="amber" />
+                    <KpiCard title="Net Profit" value={formatCurrency(processedData.net_profit)} icon={<DollarSign size={16} />} tone={processedData.net_profit >= 0 ? 'green' : 'red'} />
+                    <KpiCard title="Realized Profit" value={formatCurrency(processedData.total_realized_profit)} icon={<TrendingUp size={16} />} tone="blue" />
+                    <KpiCard title="Dividend Income" value={formatCurrency(processedData.total_dividends)} icon={<DollarSign size={16} />} tone="emerald" />
+                    <KpiCard title="Fees" value={formatCurrency(processedData.total_fees_paid)} icon={<ArrowDownRight size={16} />} tone="purple" />
                 </div>
 
-                {/* Performance Metrics Row */}
-                {data.performance_metrics && (
-                    <div className="flex-none grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <KpiCard
-                            title="ROI"
-                            value={`${data.performance_metrics.roi.toFixed(2)}%`}
-                            icon={<TrendingUp size={18} />}
-                            color="blue"
-                            isCount
-                        />
-                        <KpiCard
-                            title="Annualized Return"
-                            value={`${data.performance_metrics.annualizedReturn.toFixed(2)}%`}
-                            icon={<Target size={18} />}
-                            color="emerald"
-                            isCount
-                        />
-                        <KpiCard
-                            title="Win Rate"
-                            value={`${data.performance_metrics.winLossRatio.winRate.toFixed(1)}%`}
-                            icon={<Award size={18} />}
-                            color="green"
-                            isCount
-                        />
-                        <KpiCard
-                            title="Avg Hold Period"
-                            value={`${Math.round(data.performance_metrics.averageHoldingPeriod)} days`}
-                            icon={<Clock size={18} />}
-                            color="purple"
-                            isCount
-                        />
-                    </div>
-                )}
-
-                {/* Charts Area */}
-                <div className="flex-none h-64 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="bg-gray-900 rounded-lg p-3 border border-gray-800 flex flex-col">
-                        <h3 className="text-sm font-semibold mb-2 text-gray-400">Cumulative Realized Profit ({selectedCurrency})</h3>
-                        <div className="flex-1 min-h-0">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData}>
-                                    <defs>
-                                        <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                                    <XAxis dataKey="date" stroke="#666" fontSize={11} tickMargin={5} minTickGap={30} />
-                                    <YAxis stroke="#666" fontSize={11} tickFormatter={(val) => `${val}`} width={40} />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', fontSize: '12px' }}
-                                        itemStyle={{ color: '#fff' }}
-                                        formatter={(val: number | undefined) => [formatCurrency(val), "Profit"]}
-                                    />
-                                    <Area type="monotone" dataKey="cumulative" stroke="#10b981" fillOpacity={1} fill="url(#colorProfit)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                    <h2 className="text-sm font-semibold text-gray-300 mb-3">Totals By Currency ({selectedYear})</h2>
+                    {Object.keys(currencyBreakdown).length === 0 ? (
+                        <p className="text-sm text-gray-500">No rows for this selection.</p>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                            {Object.entries(currencyBreakdown).map(([currency, row]) => (
+                                <div key={currency} className="bg-gray-800 border border-gray-700 rounded p-3">
+                                    <div className="text-xs text-blue-400 font-semibold mb-1">{currency}</div>
+                                    <div className="text-xs text-gray-400">Realized: {formatCurrency(row.realized_profit, currency)}</div>
+                                    <div className="text-xs text-gray-400">Dividends: {formatCurrency(row.dividends, currency)}</div>
+                                    <div className="text-xs text-gray-400">Fees: {formatCurrency(row.fees_paid, currency)}</div>
+                                    <div className={`text-sm font-semibold mt-1 ${row.net_profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        Net: {formatCurrency(row.net_profit, currency)}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    </div>
-
-                    <div className="bg-gray-900 rounded-lg p-3 border border-gray-800 flex flex-col">
-                        <h3 className="text-sm font-semibold mb-2 text-gray-400">Profit by Ticker (Top 20)</h3>
-                        <div className="flex-1 min-h-0">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={tickerData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                                    <XAxis dataKey="ticker" stroke="#666" fontSize={11} />
-                                    <YAxis stroke="#666" fontSize={11} tickFormatter={(val) => `${val}`} width={40} />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px', fontSize: '12px' }}
-                                        itemStyle={{ color: '#fff' }}
-                                        formatter={(val: number | undefined) => [formatCurrency(val), "Profit"]}
-                                    />
-                                    <Bar dataKey="profit" fill="#60a5fa" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
+                    )}
                 </div>
 
-                {/* Data Tables with Tabs */}
-                <div className="flex-1 bg-gray-900 rounded-lg border border-gray-800 flex flex-col min-h-0 overflow-hidden">
-                    <div className="flex border-b border-gray-800">
-                        <TabButton
-                            active={activeTab === 'trades'}
-                            onClick={() => setActiveTab('trades')}
-                            label={`Closed Trades (${sortedTrades.length})`}
-                        />
-                        <TabButton
-                            active={activeTab === 'positions'}
-                            onClick={() => setActiveTab('positions')}
-                            label={`Open Positions (${openPositionsSummary.length})`}
-                        />
-                        <TabButton
-                            active={activeTab === 'dividends'}
-                            onClick={() => setActiveTab('dividends')}
-                            label={`Dividends (${processedData.dividends.length})`}
-                        />
-                        <TabButton
-                            active={activeTab === 'fees'}
-                            onClick={() => setActiveTab('fees')}
-                            label={`Fees (${processedData.fees.length})`}
-                        />
-                        <TabButton
-                             active={activeTab === 'performance'}
-                             onClick={() => setActiveTab('performance')}
-                             label="Performance"
-                         />
-                        <TabButton
-                             active={activeTab === 'tax'}
-                             onClick={() => setActiveTab('tax')}
-                             label={`Tax (${data.taxCalculations ? Object.keys(data.taxCalculations).length : 0})`}
-                         />
-<TabButton
-                             active={activeTab === 'alerts'}
-                             onClick={() => setActiveTab('alerts')}
-                             label={`Alerts (${data.priceAlerts?.length || 0})`}
-                         />
+                <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+                    <div className="border-b border-gray-800 px-3 flex gap-2">
+                        <TabButton active={activeTab === 'trades'} onClick={() => setActiveTab('trades')} label={`Closed Trades (${sortedTrades.length})`} />
+                        <TabButton active={activeTab === 'positions'} onClick={() => setActiveTab('positions')} label={`Open Positions (${openPositionsSummary.length})`} />
+                        <TabButton active={activeTab === 'dividends'} onClick={() => setActiveTab('dividends')} label={`Dividends (${processedData.dividends.length})`} />
+                        <TabButton active={activeTab === 'fees'} onClick={() => setActiveTab('fees')} label={`Fees (${processedData.fees.length})`} />
+                    </div>
 
-                         {activeTab === 'alerts' && (
-                             <AlertManager 
-                                 symbols={Array.from(new Set([
-                                     ...data.closed_trades.map(t => t.ticker),
-                                     ...Object.keys(data.open_positions)
-                                 ]))}
-                                 onAlert={alertId => alertData => {
-                                     console.log('Alert triggered:', { alertId, alertData });
-                                 }}
-                             />
-                         )}
+                    <div className="max-h-[55vh] overflow-auto">
+                        {activeTab === 'trades' && (
+                            <Table>
+                                <thead>
+                                    <tr className="text-gray-400 border-b border-gray-800 text-xs uppercase">
+                                        <Th>Date</Th>
+                                        <Th>Ticker</Th>
+                                        <Th>Qty</Th>
+                                        <Th align="right">Sell Price</Th>
+                                        <Th align="right">Cost Basis</Th>
+                                        <Th align="right">Profit</Th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sortedTrades.map((trade, idx) => (
+                                        <tr key={`${trade.ticker}-${idx}`} className="border-b border-gray-800/70 hover:bg-white/5">
+                                            <Td>{toDate(trade.date).toLocaleDateString()}</Td>
+                                            <Td className="font-semibold text-blue-300">{trade.ticker}</Td>
+                                            <Td>{trade.quantity}</Td>
+                                            <Td align="right">{formatCurrency(trade.sell_price)}</Td>
+                                            <Td align="right">{formatCurrency(trade.cost_basis)}</Td>
+                                            <Td align="right" className={trade.realized_profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                                {formatCurrency(trade.realized_profit)}
+                                            </Td>
+                                        </tr>
+                                    ))}
+                                    {sortedTrades.length === 0 && (
+                                        <tr><Td colSpan={6} className="text-center text-gray-500 py-6">No closed trades.</Td></tr>
+                                    )}
+                                </tbody>
+                            </Table>
+                        )}
 
-                         {activeTab === 'alerts' && (
-                             <AlertManager 
-                                 symbols={Array.from(new Set([
-                                     ...data.closed_trades.map(t => t.ticker),
-                                     ...Object.keys(data.open_positions)
-                                 ]))}
-                             />
-                         )}
+                        {activeTab === 'positions' && (
+                            <Table>
+                                <thead>
+                                    <tr className="text-gray-400 border-b border-gray-800 text-xs uppercase">
+                                        <Th>Ticker</Th>
+                                        <Th>Qty</Th>
+                                        <Th align="right">Avg Cost</Th>
+                                        <Th align="right">Total Cost</Th>
+                                        <Th align="right">Market Value</Th>
+                                        <Th align="right">Unrealized</Th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {openPositionsSummary.map((position) => (
+                                        <tr key={position.ticker} className="border-b border-gray-800/70 hover:bg-white/5">
+                                            <Td className="font-semibold text-blue-300">{position.ticker}</Td>
+                                            <Td>{position.quantity}</Td>
+                                            <Td align="right">{formatCurrency(position.avgCost)}</Td>
+                                            <Td align="right">{formatCurrency(position.totalCost)}</Td>
+                                            <Td align="right">{formatCurrency(position.marketValue)}</Td>
+                                            <Td align="right" className={position.unrealized >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                                {formatCurrency(position.unrealized)}
+                                            </Td>
+                                        </tr>
+                                    ))}
+                                    {openPositionsSummary.length === 0 && (
+                                        <tr><Td colSpan={6} className="text-center text-gray-500 py-6">No open positions.</Td></tr>
+                                    )}
+                                </tbody>
+                            </Table>
+                        )}
 
-                         {activeTab === 'alerts' && (
-                             <AlertManager 
-                                 symbols={Array.from(new Set([
-                                     ...data.closed_trades.map(t => t.ticker),
-                                     ...Object.keys(data.open_positions)
-                                 ]))}
-                             />
-                         )}
+                        {activeTab === 'dividends' && (
+                            <Table>
+                                <thead>
+                                    <tr className="text-gray-400 border-b border-gray-800 text-xs uppercase">
+                                        <Th>Date</Th>
+                                        <Th>Description</Th>
+                                        <Th align="right">Amount</Th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {[...processedData.dividends]
+                                        .sort((a, b) => toDate(b.date).getTime() - toDate(a.date).getTime())
+                                        .map((dividend, idx) => (
+                                            <tr key={idx} className="border-b border-gray-800/70 hover:bg-white/5">
+                                                <Td>{toDate(dividend.date).toLocaleDateString()}</Td>
+                                                <Td>{dividend.description || 'Dividend'}</Td>
+                                                <Td align="right" className="text-emerald-400">{formatCurrency(dividend.amount)}</Td>
+                                            </tr>
+                                        ))}
+                                    {processedData.dividends.length === 0 && (
+                                        <tr><Td colSpan={3} className="text-center text-gray-500 py-6">No dividends.</Td></tr>
+                                    )}
+                                </tbody>
+                            </Table>
+                        )}
 
-                          {activeTab === 'performance' && data.performance_metrics && (
-                            <div className="p-4 space-y-6">
-                                {/* Summary Stats */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-gray-800 rounded-lg p-4">
-                                        <div className="text-gray-400 text-xs uppercase mb-1">Total Invested</div>
-                                        <div className="text-2xl font-bold text-white">{formatCurrency(data.performance_metrics.totalInvested)}</div>
-                                    </div>
-                                    <div className="bg-gray-800 rounded-lg p-4">
-                                        <div className="text-gray-400 text-xs uppercase mb-1">Current Value</div>
-                                        <div className="text-2xl font-bold text-white">{formatCurrency(data.performance_metrics.currentValue)}</div>
-                                    </div>
-                                    <div className="bg-gray-800 rounded-lg p-4">
-                                        <div className="text-gray-400 text-xs uppercase mb-1">Winning Trades</div>
-                                        <div className="text-2xl font-bold text-green-400">{data.performance_metrics.winLossRatio.wins}</div>
-                                    </div>
-                                    <div className="bg-gray-800 rounded-lg p-4">
-                                        <div className="text-gray-400 text-xs uppercase mb-1">Losing Trades</div>
-                                        <div className="text-2xl font-bold text-red-400">{data.performance_metrics.winLossRatio.losses}</div>
-                                    </div>
-                                </div>
-
-                                {/* Best Trades */}
-                                <div>
-                                    <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                                        <Award className="text-green-400" size={20} />
-                                        Top 5 Best Trades
-                                    </h3>
-                                    <TableContainer>
-                                        <TableHeader>
-                                            <Th>Date</Th>
-                                            <Th>Ticker</Th>
-                                            <Th>Qty</Th>
-                                            <Th>Sell Price</Th>
-                                            <Th align="right">Profit ({selectedCurrency})</Th>
-                                        </TableHeader>
-                                        <tbody>
-                                            {data.performance_metrics.bestTrades.map((t, i) => (
-                                                <tr key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                                    <Td>{t.date.toLocaleDateString()}</Td>
-                                                    <Td className="font-semibold text-blue-400">{t.ticker}</Td>
-                                                    <Td>{t.quantity}</Td>
-                                                    <Td>{formatCurrency(t.sell_price)}</Td>
-                                                    <Td align="right" className="text-green-400 font-bold">
-                                                        {formatCurrency(t.realized_profit)}
-                                                    </Td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </TableContainer>
-                                </div>
-
-                                {/* Worst Trades */}
-                                <div>
-                                    <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                                        <AlertTriangle className="text-red-400" size={20} />
-                                        Top 5 Worst Trades
-                                    </h3>
-                                    <TableContainer>
-                                        <TableHeader>
-                                            <Th>Date</Th>
-                                            <Th>Ticker</Th>
-                                            <Th>Qty</Th>
-                                            <Th>Sell Price</Th>
-                                            <Th align="right">Loss ({selectedCurrency})</Th>
-                                        </TableHeader>
-                                        <tbody>
-                                            {[...processedData.closed_trades]
-                                                .sort((a, b) => a.realized_profit - b.realized_profit)
-                                                .slice(0, 5)
-                                                .map((t, i) => (
-                                                    <tr key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
-                                                        <Td>{t.date.toLocaleDateString()}</Td>
-                                                        <Td className="font-semibold text-blue-400">{t.ticker}</Td>
-                                                        <Td>{t.quantity}</Td>
-                                                        <Td>{formatCurrency(t.sell_price)}</Td>
-                                                        <Td align="right" className="text-red-400 font-bold">
-                                                            {formatCurrency(t.realized_profit)}
-                                                        </Td>
-                                                    </tr>
-                                                ))}
-                                        </tbody>
-                                    </TableContainer>
-                                </div>
-                            </div>
+                        {activeTab === 'fees' && (
+                            <Table>
+                                <thead>
+                                    <tr className="text-gray-400 border-b border-gray-800 text-xs uppercase">
+                                        <Th>Date</Th>
+                                        <Th>Description</Th>
+                                        <Th align="right">Amount</Th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {[...processedData.fees]
+                                        .sort((a, b) => toDate(b.date).getTime() - toDate(a.date).getTime())
+                                        .map((fee, idx) => (
+                                            <tr key={idx} className="border-b border-gray-800/70 hover:bg-white/5">
+                                                <Td>{toDate(fee.date).toLocaleDateString()}</Td>
+                                                <Td>{fee.description || 'Fee'}</Td>
+                                                <Td align="right" className="text-rose-400">{formatCurrency(fee.amount)}</Td>
+                                            </tr>
+                                        ))}
+                                    {processedData.fees.length === 0 && (
+                                        <tr><Td colSpan={3} className="text-center text-gray-500 py-6">No fees.</Td></tr>
+                                    )}
+                                </tbody>
+                            </Table>
                         )}
                     </div>
                 </div>
@@ -833,31 +516,23 @@ return () => {
     );
 };
 
-// Sub-components for cleaner code
-const KpiCard: React.FC<{ title: string; value: number | string; format?: (v: number) => string; icon: React.ReactNode; color: string; warnIfNegative?: boolean; isCount?: boolean }> = ({ title, value, format, icon, color, warnIfNegative, isCount }) => {
-    // Tailwind dynamic classes for colors are tricky, using concrete map or just style.
-    // Simplified for this example to reuse existing classes safely
-    const colorClasses: Record<string, string> = {
-        emerald: 'border-l-emerald-500 text-emerald-400 bg-emerald-500/10',
-        blue: 'border-l-blue-500 text-blue-400 bg-blue-500/10',
-        green: 'border-l-green-500 text-green-400 bg-green-500/10',
-        purple: 'border-l-purple-500 text-purple-400 bg-purple-500/10',
-        amber: 'border-l-amber-500 text-amber-400 bg-amber-500/10',
+const KpiCard: React.FC<{ title: string; value: string; icon: React.ReactNode; tone: 'amber' | 'green' | 'red' | 'blue' | 'emerald' | 'purple' }> = ({ title, value, icon, tone }) => {
+    const toneClasses: Record<string, string> = {
+        amber: 'text-amber-300 border-amber-500/30',
+        green: 'text-green-300 border-green-500/30',
+        red: 'text-red-300 border-red-500/30',
+        blue: 'text-blue-300 border-blue-500/30',
+        emerald: 'text-emerald-300 border-emerald-500/30',
+        purple: 'text-purple-300 border-purple-500/30',
     };
-    const c = colorClasses[color] || colorClasses['blue'];
-    const valClass = warnIfNegative && typeof value === 'number' && value < 0 ? 'text-red-400' : 'text-white';
 
     return (
-        <div className={`bg-gray-900 rounded-lg p-3 border-l-4 ${c.split(' ')[0]} border-t border-r border-b border-gray-800`}>
-            <div className="flex items-center gap-2 mb-1">
-                <div className={`p-1.5 rounded-lg ${c.split(' ').slice(1).join(' ')}`}>
-                    {icon}
-                </div>
-                <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">{title}</span>
+        <div className={`bg-gray-900 border rounded-lg p-3 ${toneClasses[tone]}`}>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-400">
+                {icon}
+                {title}
             </div>
-            <div className={`text-xl font-bold ${valClass}`}>
-                {isCount ? value : (typeof value === 'number' && format ? format(value) : value)}
-            </div>
+            <div className="text-xl font-semibold mt-2 text-white">{value}</div>
         </div>
     );
 };
@@ -865,35 +540,20 @@ const KpiCard: React.FC<{ title: string; value: number | string; format?: (v: nu
 const TabButton: React.FC<{ active: boolean; onClick: () => void; label: string }> = ({ active, onClick, label }) => (
     <button
         onClick={onClick}
-        className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${active ? 'border-blue-500 text-white bg-gray-800/50' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/5'
-            }`}
+        className={`px-3 py-2 text-sm border-b-2 ${active ? 'border-blue-500 text-white' : 'border-transparent text-gray-400 hover:text-white'}`}
     >
         {label}
     </button>
 );
 
-const TableContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <table className="w-full text-left border-collapse relative">
-        {children}
-    </table>
-);
-
-const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <thead className="sticky top-0 bg-[#1a1a1a] z-10 shadow-sm">
-        <tr className="text-gray-400 border-b border-gray-700">
-            {children}
-        </tr>
-    </thead>
+const Table: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <table className="w-full text-sm">{children}</table>
 );
 
 const Th: React.FC<{ children: React.ReactNode; align?: 'left' | 'right' }> = ({ children, align = 'left' }) => (
-    <th className={`p-3 font-medium text-xs uppercase tracking-wider ${align === 'right' ? 'text-right' : 'text-left'}`}>
-        {children}
-    </th>
+    <th className={`px-3 py-2 ${align === 'right' ? 'text-right' : 'text-left'}`}>{children}</th>
 );
 
 const Td: React.FC<{ children: React.ReactNode; align?: 'left' | 'right'; className?: string; colSpan?: number }> = ({ children, align = 'left', className = '', colSpan }) => (
-    <td colSpan={colSpan} className={`p-3 text-sm text-gray-300 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
-        {children}
-    </td>
+    <td colSpan={colSpan} className={`px-3 py-2 text-gray-200 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>{children}</td>
 );

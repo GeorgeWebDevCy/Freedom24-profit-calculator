@@ -342,12 +342,38 @@ export class TaxCalculatorService {
         
         return [
             {
+                // Cyprus tax resident, non-domiciled individual.
+                // For securities portfolios, disposal gains are generally exempt
+                // and dividends are exempt from SDC for non-doms.
+                country: 'Cyprus (Non-Dom)',
+                taxYear: currentYear,
+                taxRate: {
+                    shortTerm: 0,
+                    longTerm: 0,
+                    dividend: 0,
+                    capitalGains: 0
+                }
+            },
+            {
+                // Cyprus tax resident, domiciled individual.
+                // SDC on dividends is set to 5% for profits earned from 1 Jan 2026.
+                // Securities disposal gains are generally exempt.
+                country: 'Cyprus (Domiciled)',
+                taxYear: currentYear,
+                taxRate: {
+                    shortTerm: 0,
+                    longTerm: 0,
+                    dividend: 5,
+                    capitalGains: 0
+                }
+            },
+            {
                 country: 'United States',
                 taxYear: currentYear,
                 taxRate: {
-                    shortTerm: 35,    // Ordinary income rates
-                    longTerm: 15,     // Qualified dividends & long-term gains
-                    dividend: 15,      // Qualified dividends
+                    shortTerm: 35,
+                    longTerm: 15,
+                    dividend: 15,
                     capitalGains: 15
                 }
             },

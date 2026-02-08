@@ -20,13 +20,13 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
 
     const addResidency = () => {
         const newResidency: TaxResidency = {
-            country: 'United States',
+            country: 'Cyprus (Non-Dom)',
             taxYear: new Date().getFullYear(),
             taxRate: {
-                shortTerm: 35,
-                longTerm: 15,
-                dividend: 15,
-                capitalGains: 15
+                shortTerm: 0,
+                longTerm: 0,
+                dividend: 0,
+                capitalGains: 0
             }
         };
 
@@ -72,7 +72,7 @@ export const TaxSettingsComponent: React.FC<TaxSettingsProps> = ({ settings, onS
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('en-US', { 
             style: 'currency', 
-            currency: 'USD', 
+            currency: localSettings.defaultCurrency, 
             maximumFractionDigits: 2 
         }).format(val);
     };

@@ -7,32 +7,32 @@ import {
 } from 'playwright'
 import type { BrowserWindow } from 'electron'
 import {
-  beforeAll,
   afterAll,
+  beforeAll,
   describe,
   expect,
   test,
 } from 'vitest'
 
 const root = path.join(__dirname, '..')
+const shouldRunE2E = process.env.RUN_E2E === '1' && process.platform !== 'linux'
+const suite = shouldRunE2E ? describe : describe.skip
+
 let electronApp: ElectronApplication
 let page: Page
 
-if (process.platform === 'linux') {
-  // pass ubuntu
-  test(() => expect(true).true)
-} else {
+suite('[electron-vite-react] e2e tests', () => {
   beforeAll(async () => {
     electronApp = await electron.launch({
       args: ['.', '--no-sandbox'],
       cwd: root,
       env: { ...process.env, NODE_ENV: 'development' },
     })
-    page = await electronApp.firstWindow()
 
+    page = await electronApp.firstWindow()
     const mainWin: JSHandle<BrowserWindow> = await electronApp.browserWindow(page)
     await mainWin.evaluate(async (win) => {
-      win.webContents.executeJavaScript('console.log("Execute JavaScript with e2e testing.")')
+      win.webContents.executeJavaScript('console.log(\"Execute JavaScript with e2e testing.\")')
     })
   })
 
@@ -42,24 +42,22 @@ if (process.platform === 'linux') {
     await electronApp.close()
   })
 
-  describe('[electron-vite-react] e2e tests', async () => {
-    test('startup', async () => {
-      const title = await page.title()
-      expect(title).eq('Freedom24 Profit Calculator')
-    })
-
-    test('should be home page is load correctly', async () => {
-      const h1 = await page.$('h1')
-      const title = await h1?.textContent()
-      expect(title).eq('Freedom24 Profit Calculator')
-    })
-
-    test('should show calculate button disabled without files', async () => {
-      const button = page.getByRole('button', { name: 'Calculate Profits' })
-      const isVisible = await button.isVisible()
-      const isDisabled = await button.isDisabled()
-      expect(isVisible).eq(true)
-      expect(isDisabled).eq(true)
-    })
+  test('startup', async () => {
+    const title = await page.title()
+    expect(title).eq('Freedom24 Profit Calculator')
   })
-}
+
+  test('should be home page is load correctly', async () => {
+    const h1 = await page.$('h1')
+    const title = await h1?.textContent()
+    expect(title).eq('Freedom24 Profit Calculator')
+  })
+
+  test('should show calculate button disabled without files', async () => {
+    const button = page.getByRole('button', { name: 'Calculate Profits' })
+    const isVisible = await button.isVisible()
+    const isDisabled = await button.isDisabled()
+    expect(isVisible).eq(true)
+    expect(isDisabled).eq(true)
+  })
+})

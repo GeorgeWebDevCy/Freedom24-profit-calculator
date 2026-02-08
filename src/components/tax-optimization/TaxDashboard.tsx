@@ -42,7 +42,7 @@ interface TaxDashboardProps {
 export const TaxDashboard: React.FC<TaxDashboardProps> = ({ data, onRefresh }) => {
     const [taxSettings, setTaxSettings] = useState<TaxSettings>(() => ({
         residencies: TaxCalculatorService.getDefaultTaxResidencies(),
-        defaultCurrency: 'USD',
+        defaultCurrency: 'EUR',
         optimizationEnabled: true,
         harvestThreshold: 1000,
         washSaleEnabled: true,
@@ -80,7 +80,7 @@ export const TaxDashboard: React.FC<TaxDashboardProps> = ({ data, onRefresh }) =
 
             // Calculate tax for current year
             const currentYear = selectedYear;
-            const residency = taxSettings.residencies.find(r => r.country === 'United States') || taxSettings.residencies[0];
+            const residency = taxSettings.residencies[0] || TaxCalculatorService.getDefaultTaxResidencies()[0];
             
             const taxCalc = taxCalculator.calculateTaxLiability(
                 currentYear,
@@ -129,7 +129,7 @@ export const TaxDashboard: React.FC<TaxDashboardProps> = ({ data, onRefresh }) =
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('en-US', { 
             style: 'currency', 
-            currency: 'USD', 
+            currency: taxSettings.defaultCurrency, 
             maximumFractionDigits: 0 
         }).format(val);
     };
