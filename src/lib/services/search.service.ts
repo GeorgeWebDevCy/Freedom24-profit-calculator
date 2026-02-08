@@ -294,7 +294,7 @@ export class SearchService {
             results.push({
                 id: `trade_${index}`,
                 type: 'trade',
-                title: `${trade.ticker} - ${trade.direction}`,
+                title: `${trade.ticker} - ${trade.method}`,
                 description: `${trade.quantity} shares at ${trade.sell_price}`,
                 data: trade,
                 timestamp: trade.date,
