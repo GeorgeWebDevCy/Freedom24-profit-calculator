@@ -155,7 +155,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
     }, [data]);
 
     // Initialize services
-    useEffect(() => {
+useEffect(() => {
         // Initialize alerts service
         if (!alertService) {
             const alertSettings = AlertsService.getDefaultSettings();
@@ -170,32 +170,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
             if (symbols.size > 0) {
                 service.startMonitoring(Array.from(symbols));
             }
-
-            return () => {
-                service.stopMonitoring();
-            };
         }
 
         // Initialize search service
         if (!searchService) {
             const service = new SearchService();
             setSearchService(service);
+        }
 
-            // Build search index if not exists
-            if (data.closed_trades.length > 0 || Object.keys(data.open_positions).length > 0) {
-                service.buildSearchIndex(data);
-            }
-
-            return () => {
-                service.stopMonitoring();
-            };
+        // Build search index if not exists
+        if (data.closed_trades.length > 0 || Object.keys(data.open_positions).length > 0) {
+            service.buildSearchIndex(data);
         }
 
         return () => {
             searchService?.stopMonitoring?.();
             alertService?.stopMonitoring?.();
         };
-    }, [data, alertService, searchService]);
+    }, [data]);
 
     // Extract unique currencies for selection
     const currencies = React.useMemo(() => {

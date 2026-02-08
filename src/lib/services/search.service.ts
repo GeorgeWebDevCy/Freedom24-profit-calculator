@@ -97,7 +97,7 @@ export class SearchService {
     /**
      * Build search index for fast searching
      */
-    private buildSearchIndex(data: CalculationResult): void {
+    public buildSearchIndex(data: CalculationResult): void {
         this.index.clear();
 
         // Index trades
