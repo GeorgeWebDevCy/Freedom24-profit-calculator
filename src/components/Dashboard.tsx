@@ -10,13 +10,15 @@ import { TaxSettingsComponent } from './tax-optimization/TaxSettings';
 import { TaxCalculatorService } from '../lib/services/tax-calculator.service';
 import { AlertManager } from './alerts/AlertManager';
 import { AlertsService } from '../lib/services/alerts.service';
+import { SearchPanel } from './search/SearchPanel';
+import { SearchService } from '../lib/services/search.service';
 
 interface DashboardProps {
     data: CalculationResult;
     onReset: () => void;
 }
 
-type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance' | 'tax' | 'alerts';
+type Tab = 'trades' | 'positions' | 'dividends' | 'fees' | 'performance' | 'tax' | 'alerts' | 'search';
 
 export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
     const [selectedYear, setSelectedYear] = useState<string>('All');
@@ -32,6 +34,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
         taxLossCarryforwardEnabled: true
     }));
     const [alertService, setAlertService] = useState<AlertsService | null>(null);
+    const [searchService, setSearchService] = useState<SearchService | null>(null);
 
     const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(() => {
         const saved = typeof window !== 'undefined' ? localStorage.getItem('f24_exchange_rates') : null;
@@ -151,26 +154,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onReset }) => {
         };
     }, [data]);
 
-    // Handler to fetch stock prices for open positions
-    const handleFetchPrices = async () => {
-        const tickers = Object.keys(data.open_positions);
-        if (tickers.length === 0) {
-            alert('No open positions to fetch prices for.');
-            return;
+    // Initialize services
+    useEffect(() => {
+        // Initialize alerts service
+        if (!alertService) {
+            const alertSettings = AlertsService.getDefaultSettings();
+            const service = new AlertsService(alertSettings);
+            setAlertService(service);
+
+            // Get symbols from data for monitoring
+            const symbols = new Set<string>();
+            data.closed_trades.forEach(trade => symbols.add(trade.ticker));
+            Object.keys(data.open_positions).forEach(ticker => symbols.add(ticker));
+
+            if (symbols.size > 0) {
+                service.startMonitoring(Array.from(symbols));
+            }
+
+            return () => {
+                service.stopMonitoring();
+            };
         }
 
-        setFetchingPrices(true);
-        try {
-            const prices = await fetchStockPrices(tickers);
-            setStockPrices(prices);
-            setPricesLastUpdated(new Date());
-        } catch (error) {
-            console.error('Failed to fetch stock prices:', error);
-            alert('Failed to fetch stock prices. Some prices may not be available.');
-        } finally {
-            setFetchingPrices(false);
+        // Initialize search service
+        if (!searchService) {
+            const service = new SearchService();
+            setSearchService(service);
+
+            // Build search index if not exists
+            if (data.closed_trades.length > 0 || Object.keys(data.open_positions).length > 0) {
+                service.buildSearchIndex(data);
+            }
+
+            return () => {
+                service.stopMonitoring();
+            };
         }
-    };
+
+        return () => {
+            searchService?.stopMonitoring?.();
+            alertService?.stopMonitoring?.();
+        };
+    }, [data, alertService, searchService]);
 
     // Extract unique currencies for selection
     const currencies = React.useMemo(() => {
