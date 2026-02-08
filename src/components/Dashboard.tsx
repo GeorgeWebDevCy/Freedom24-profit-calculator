@@ -187,12 +187,11 @@ useEffect(() => {
             service.buildSearchIndex(data);
         }
 
-                return () => {
-            alertService?.stopMonitoring?.();
+return () => {
             searchService?.stopMonitoring?.();
+            alertService?.stopMonitoring?.();
         };
     }, [data, alertService, searchService]);
-    }, [data]);
 
     // Extract unique currencies for selection
     const currencies = React.useMemo(() => {
