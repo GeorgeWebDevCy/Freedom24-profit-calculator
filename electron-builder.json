@@ -1,15 +1,17 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.freedom24.profitcalculator",
   "asar": true,
   "directories": {
-    "output": "release/${version}"
+    "output": "release/${version}",
+    "buildResources": "build"
   },
   "files": [
     "dist-electron",
     "dist"
   ],
   "mac": {
+    "icon": "build/icon.icns",
     "artifactName": "${productName}_${version}.${ext}",
     "target": [
       "dmg",
@@ -17,6 +19,7 @@
     ]
   },
   "win": {
+    "icon": "build/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -26,6 +29,9 @@
       }
     ],
     "artifactName": "${productName}_${version}.${ext}"
+  },
+  "linux": {
+    "icon": "build/icon.png"
   },
   "nsis": {
     "oneClick": false,

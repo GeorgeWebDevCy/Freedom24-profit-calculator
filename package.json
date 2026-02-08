@@ -1,8 +1,9 @@
 {
-  "name": "electron-vite-react",
+  "name": "freedom24-profit-calculator",
+  "productName": "Freedom24 Profit Calculator",
   "version": "2.2.0",
-  "main": "dist-electron/main/index.js",
-  "description": "Electron Vite React boilerplate.",
+  "main": "dist-electron/main/index.cjs",
+  "description": "Desktop profit and tax calculator for Freedom24 exports.",
   "author": "草鞋没号 <308487730@qq.com>",
   "license": "MIT",
   "private": true,
@@ -12,6 +13,13 @@
     }
   },
   "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && electron-builder",
+    "preview": "vite preview",
+    "pretest": "vite build --mode=test",
+    "test": "vitest run"
+  },
   "dependencies": {
     "clsx": "^2.1.1",
     "electron-updater": "^6.3.9",

@@ -33,8 +33,8 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 // Disable GPU Acceleration for Windows 7
 if (os.release().startsWith('6.1')) app.disableHardwareAcceleration()
 
-// Set application name for Windows 10+ notifications
-if (process.platform === 'win32') app.setAppUserModelId(app.getName())
+// Set a stable app id so taskbar pinning/notifications map to this app.
+if (process.platform === 'win32') app.setAppUserModelId('com.freedom24.profitcalculator')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -44,11 +44,14 @@ if (!app.requestSingleInstanceLock()) {
 let win: ElectronBrowserWindow | null = null
 const preload = path.join(__dirname, '../preload/index.mjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
+const windowIcon = VITE_DEV_SERVER_URL
+  ? path.join(process.env.APP_ROOT, 'build', 'icon.ico')
+  : path.join(process.env.VITE_PUBLIC, 'favicon.ico')
 
 async function createWindow() {
   win = new BrowserWindow({
-    title: 'Main window',
-    icon: path.join(process.env.VITE_PUBLIC, 'favicon.ico'),
+    title: 'Freedom24 Profit Calculator',
+    icon: windowIcon,
     webPreferences: {
       preload,
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production
