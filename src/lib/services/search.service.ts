@@ -250,7 +250,7 @@ export class SearchService {
                     id: `trade_${index}`,
                     type: 'trade',
                 title: `${trade.ticker} - ${trade.method} - ${trade.date.toLocaleDateString()}`,
-                    description: `${trade.quantity} shares at ${trade.sell_price} on ${trade.date.toLocaleDateString()}`,
+                description: `${trade.quantity} shares at ${trade.sell_price} on ${trade.date.toLocaleDateString()} (Method: ${trade.method})`,
                     data: trade,
                     timestamp: trade.date,
                     relevanceScore: 0
